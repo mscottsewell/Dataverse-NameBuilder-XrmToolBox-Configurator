@@ -69,6 +69,12 @@ Build output is written to `bin\Release\NameBuilderConfigurator.dll`.
 2. Launch XrmToolBox and connect to a Dataverse organization that already has the **NameBuilder** plug-in installed.
 3. Open **NameBuilder Configurator** from the tool list; the plug-in will confirm the NameBuilder assembly is present before enabling the designer surface.
 
+### Packaging for the XrmToolBox store
+
+1. Ensure a Release build has been produced (`pwsh -File .\build.ps1 -Configuration Release`).
+1. Run `pwsh -File .\pack-nuget.ps1` (the script parses `AssemblyInfo.cs` for the version, downloads `nuget.exe` if needed, and executes `nuget pack NameBuilderConfigurator.nuspec`).
+1. The resulting `.nupkg` lands in `artifacts\nuget`. Upload that package when submitting to the XrmToolBox Tool Library.
+
 ## Usage
 
 1. **Connect** – Use the standard XrmToolBox connection wizard.

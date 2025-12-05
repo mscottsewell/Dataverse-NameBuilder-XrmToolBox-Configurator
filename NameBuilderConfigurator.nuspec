@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package>
+  <metadata>
+    <id>NameBuilderConfigurator</id>
+    <version>$version$</version>
+    <title>NameBuilder Configurator</title>
+    <authors>Scott Sewell</authors>
+    <owners>Scott Sewell</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectUrl>https://github.com/mscottsewell/NameBuilderConfigurator</projectUrl>
+    <description>Visual designer for building NameBuilder JSON payloads inside XrmToolBox.</description>
+    <releaseNotes>Review CHANGELOG or git history for details.</releaseNotes>
+    <tags>XrmToolBox Dataverse NameBuilder Plugin</tags>
+    <dependencies>
+      <dependency id="XrmToolBoxPackage" version="[1.2025.10.74]" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="bin\Release\NameBuilderConfigurator.dll" target="content\Plugins\NameBuilderConfigurator\" />
+    <file src="bin\Release\NameBuilderConfigurator.pdb" target="content\Plugins\NameBuilderConfigurator\" />
+    <file src="bin\Release\NameBuilderConfigurator.dll.config" target="content\Plugins\NameBuilderConfigurator\" />
+    <file src="bin\Release\Assets\**\*.*" target="content\Plugins\NameBuilderConfigurator\Assets\" />
+  </files>
+</package>
