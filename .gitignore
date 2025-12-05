@@ -1,0 +1,61 @@
+# Build results
+bin/
+obj/
+Ready To Run/
+[Bb]uild/
+[Bb]in*
+[Oo]bj*
+*.log
+*.tlog
+*.lastbuildstate
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Resharper / Rider
+_ReSharper*/
+*.DotSettings.user
+.idea/
+
+# NuGet packages
+packages/
+*.nupkg
+*.snupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# MSBuild
+*.cache
+*.config
+*.dll.config
+
+# Test results
+TestResult*/
+*.VisualState.xml
+*.coverage
+*.coveragexml
+
+# Temporary files
+~$*
+*.tmp
+*.temp
+*.bak
+*.old
+
+# XrmToolBox specific
+*.dtbcache.json
+*.xrmtb_recent
+
+# Publish artifacts
+*.zip
+*.cab
+Ready To Run.zip
+
+# OS files
+Thumbs.db
+.DS_Store
