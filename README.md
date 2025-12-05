@@ -1,93 +1,120 @@
-# NameBuilder Configurator - XrmToolBox Plugin
+# NameBuilder Configurator – XrmToolBox Plugin
 
-A tool for building JSON configurations for the NameBuilder project directly within XrmToolBox.
+A WinForms-based XrmToolBox plug-in that builds and publishes NameBuilder JSON configurations directly against a Dataverse environment.
+
+## Documentation
+
+- Detailed usage guide: [docs/USAGE.md](docs/USAGE.md)
+- Canonical JSON schema and plug-in internals: [Dataverse-NameBuilder Docs](https://github.com/mscottsewell/Dataverse-NameBuilder/tree/main/Docs)
 
 ## Features
 
-- 🔌 **No Authentication Needed** - Leverages XrmToolBox's existing connection
-- 📋 **Entity Selection** - Browse and select from all available entities
-- 🏷️ **Attribute Browser** - View all attributes for the selected entity
-- ✨ **Visual Pattern Builder** - Click to add attributes to your name pattern
-- 📄 **JSON Export** - Generate and export configuration files
-- 📋 **Copy to Clipboard** - Quick copy for immediate use
+- 🔌 **Connection-aware startup** – Reuses the current XrmToolBox connection and validates that the NameBuilder plug-in assembly exists in the org before enabling the UI.
+- 📋 **Entity and attribute explorer** – Load entities, browse attributes, and double-click to add any attribute to the configuration.
+- ✨ **Visual pattern builder** – Add, reorder, and remove field blocks while seeing a live preview of the generated name string and JSON payload.
+- ⚙️ **Reusable defaults** – Store prefixes, suffixes, formats, and timezone preferences in `%APPDATA%\NameBuilderConfigurator\settings.json`; the tool reapplies them when loading configs or adding new fields.
+- 📄 **Import / export / publish** – Import existing JSON, export to disk, copy to clipboard, or publish directly back to the NameBuilder plug-in steps (Create/Update) in Dataverse.
+- 🧰 **Scripted build pipeline** – `build.ps1` restores packages, increments version numbers, builds, and deploys artifacts to XrmToolBox and the `Ready To Run` folder.
 
 ## Installation
 
-### From XrmToolBox Tool Library (Recommended)
-1. Open XrmToolBox
-2. Go to "Tool Library" (Configuration menu)
-3. Search for "NameBuilder Configurator"
-4. Click Install
+### From the XrmToolBox Tool Library (recommended)
 
-### Manual Installation
-1. Build the project in Visual Studio
-2. Copy `NameBuilderConfigurator.dll` to your XrmToolBox plugins folder
-3. Restart XrmToolBox
+1. Open XrmToolBox.
+2. Select **Tool Library** from the Configuration menu.
+3. Search for **NameBuilder Configurator**.
+4. Click **Install** and restart XrmToolBox if prompted.
 
-## Building from Source
+### Manual installation
+
+1. Build the project in Release mode (instructions below).
+2. Copy `NameBuilderConfigurator.dll` and the `Assets` folder to `%APPDATA%\MscrmTools\XrmToolBox\Plugins`.
+3. Restart XrmToolBox; the tool will appear in the list.
+
+## Building from source
 
 ### Prerequisites
-- Visual Studio 2019 or later
-- .NET Framework 4.6.2 or higher
-- XrmToolBox installed (for testing)
 
-### Build Steps
+- Visual Studio 2022 (or newer) with the **.NET desktop development** workload.
+- .NET Framework 4.8 targeting packs.
+- PowerShell 7 or later.
+- XrmToolBox installed (for local testing / deployment).
 
-1. Clone the repository
-2. Open `NameBuilderConfigurator.csproj` in Visual Studio
-3. Restore NuGet packages
-4. Build the solution (Ctrl+Shift+B)
+### Build steps
 
-The compiled DLL will be in `bin\Release\NameBuilderConfigurator.dll`
+#### Option 1 – Scripted build (recommended)
 
-### Testing
+```pwsh
+pwsh -File .\build.ps1 -Configuration Release
+```
 
-1. Copy the built DLL to your XrmToolBox plugins folder:
-   ```
-   %AppData%\MscrmTools\XrmToolBox\Plugins\
-   ```
-2. Launch XrmToolBox
-3. Connect to a Dataverse environment
-4. Open "NameBuilder Configurator" from the tools list
+The script will:
+
+1. Increment the assembly version inside `Properties\AssemblyInfo.cs`.
+2. Restore NuGet packages and run MSBuild using your installed Visual Studio toolset.
+3. Copy the resulting DLL plus `Assets` into `%APPDATA%\MscrmTools\XrmToolBox\Plugins` (if XrmToolBox exists).
+4. Mirror the DLL and assets into the `Ready To Run` folder for manual distribution.
+
+#### Option 2 – Visual Studio
+
+1. Open `NameBuilderConfigurator.sln`.
+2. Restore NuGet packages when prompted.
+3. Build the **Release** configuration (`Ctrl+Shift+B`).
+
+Build output is written to `bin\Release\NameBuilderConfigurator.dll`.
+
+### Testing inside XrmToolBox
+
+1. Ensure the DLL and `Assets` folder are located under `%APPDATA%\MscrmTools\XrmToolBox\Plugins`.
+2. Launch XrmToolBox and connect to a Dataverse organization that already has the **NameBuilder** plug-in installed.
+3. Open **NameBuilder Configurator** from the tool list; the plug-in will confirm the NameBuilder assembly is present before enabling the designer surface.
 
 ## Usage
 
-1. **Connect** - Use XrmToolBox to connect to your Dataverse environment
-2. **Load Entities** - Click "Load Entities" to retrieve all available entities
-3. **Select Entity** - Choose the entity you want to configure from the dropdown
-4. **Build Pattern** - Double-click attributes or use the "Add to Pattern" button to build your name pattern
-   - Attributes are added as `{attributename}` placeholders
-   - You can add spaces and text between attributes
-5. **Review JSON** - The JSON configuration is generated automatically
-6. **Export** - Copy to clipboard or export to a file
+1. **Connect** – Use the standard XrmToolBox connection wizard.
+2. **Load Entities** – Click **Load Entities** to populate the entity dropdown.
+3. **Select Entity** – Pick the entity you plan to configure.
+4. **Build Pattern** – Double-click attributes (or use the contextual buttons) to add them as field blocks, apply prefixes/suffixes, formats, or truncation rules.
+5. **Review Output** – Inspect the live preview string and the JSON payload tab.
+6. **Publish / Export** – Publish back to Dataverse steps, export to disk, or copy JSON to the clipboard.
 
-### Example Pattern
-```
+### Example pattern
+
+```text
 {firstname} {lastname}
 ```
 
 ### Generated JSON
+
 ```json
 {
-  "entityLogicalName": "contact",
-  "namePattern": "{firstname} {lastname}",
-  "generatedBy": "XrmToolBox - NameBuilder Configurator",
-  "generatedDate": "2025-12-03T10:30:00Z"
+  "entity": "contact",
+  "targetField": "name",
+  "enableTracing": false,
+  "fields": [
+    { "field": "firstname", "type": "string" },
+    { "field": "lastname", "type": "string", "prefix": " " }
+  ]
 }
 ```
 
-## Publishing to XrmToolBox Tool Library
+## Settings & default behavior
 
-To make this plugin available in the XrmToolBox Tool Library:
+- Preferences such as splitter positions, prefixes, suffixes, date/number formats, and timezone offsets persist in `%APPDATA%\NameBuilderConfigurator\settings.json`.
+- When loading an existing configuration, any missing prefix/suffix/format values inherit the stored defaults.
+- On startup the tool verifies that the **NameBuilder** plug-in assembly exists in the connected environment; if not, it prompts the user to install the plug-in before continuing.
 
-1. Create a NuGet package (.nupkg)
-2. Submit to the XrmToolBox GitHub repository
-3. Follow the [XrmToolBox plugin submission guidelines](https://github.com/MscrmTools/XrmToolBox/wiki/Publishing-a-plugin)
+## Publishing to the XrmToolBox Tool Library
+
+1. Create a NuGet package (`.nupkg`) for the plug-in.
+2. Submit it via the XrmToolBox contribution guidelines.
+3. Follow the official [Publishing a plug-in](https://github.com/MscrmTools/XrmToolBox/wiki/Publishing-a-plugin) checklist (metadata, icons, descriptions, etc.).
 
 ## License
 
-[Add your license here]
+[Add your license information here.]
 
 ## Support
 
-For issues or feature requests, please visit the [GitHub repository](https://github.com/yourusername/NameBuilderConfigurator).
+- File issues or feature requests in this repository.
+- Need help with XrmToolBox packaging? Consult the [official wiki](https://github.com/MscrmTools/XrmToolBox/wiki/Publishing-a-plugin).
