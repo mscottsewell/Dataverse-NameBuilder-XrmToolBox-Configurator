@@ -22,18 +22,43 @@ if (-not (Test-Path $buildOutput)) {
     throw "Build output $buildOutput not found. Run pwsh -File .\\build.ps1 -Configuration $Configuration first."
 }
 
+$minimumNugetVersion = [Version]"5.10.0"
+$nugetExe = $null
 $nuget = Get-Command nuget.exe -ErrorAction SilentlyContinue
-if (-not $nuget) {
+if ($nuget) {
+    try {
+        $nugetVersion = [Version]([System.Diagnostics.FileVersionInfo]::GetVersionInfo($nuget.Source).FileVersion)
+        if ($nugetVersion -ge $minimumNugetVersion) {
+            $nugetExe = $nuget.Source
+        }
+    } catch {
+        Write-Warning "Unable to read nuget.exe version from $($nuget.Source); falling back to local copy."
+    }
+}
+
+if (-not $nugetExe) {
     $toolsDir = Join-Path $root ".nuget"
     New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
     $nugetPath = Join-Path $toolsDir "nuget.exe"
-    if (-not (Test-Path $nugetPath)) {
+
+    $downloadRequired = $true
+    if (Test-Path $nugetPath) {
+        try {
+            $localVersion = [Version]([System.Diagnostics.FileVersionInfo]::GetVersionInfo($nugetPath).FileVersion)
+            if ($localVersion -ge $minimumNugetVersion) {
+                $downloadRequired = $false
+            }
+        } catch {
+            Write-Warning "Unable to read nuget.exe version from $nugetPath; re-downloading."
+        }
+    }
+
+    if ($downloadRequired) {
         Write-Host "Downloading nuget.exe..." -ForegroundColor Cyan
         Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile $nugetPath
     }
+
     $nugetExe = $nugetPath
-} else {
-    $nugetExe = $nuget.Source
 }
 
 $outputDir = Join-Path $root "artifacts\nuget"

@@ -1,24 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<package>
-  <metadata>
+<package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+  <metadata minClientVersion="5.10.0">
     <id>NameBuilderConfigurator</id>
     <version>$version$</version>
     <title>NameBuilder Configurator</title>
     <authors>Scott Sewell</authors>
     <owners>Scott Sewell</owners>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
-    <projectUrl>https://github.com/mscottsewell/NameBuilderConfigurator</projectUrl>
-    <description>Visual designer for building NameBuilder JSON payloads inside XrmToolBox.</description>
+    <license type="expression">MIT</license>
+    <projectUrl>https://github.com/mscottsewell/Dataverse-NameBuilder-XrmToolBox-Configurator</projectUrl>
+    <summary>Installation of the NameBuilder plugin https://github.com/mscottsewell/Dataverse-NameBuilder is required for use.</summary>
+    <description>Visual designer for building NameBuilder JSON payloads inside XrmToolBox. See the README for usage instructions.</description>
     <releaseNotes>Review CHANGELOG or git history for details.</releaseNotes>
     <tags>XrmToolBox Dataverse NameBuilder Plugin</tags>
+    <icon>icon.png</icon>
+    <readme>README.md</readme>
     <dependencies>
-      <dependency id="XrmToolBoxPackage" version="[1.2025.10.74]" />
+      <dependency id="XrmToolBoxPackage" version="[1.2025.10.74,)" />
     </dependencies>
   </metadata>
   <files>
-    <file src="bin\Release\NameBuilderConfigurator.dll" target="content\Plugins\NameBuilderConfigurator\" />
-    <file src="bin\Release\NameBuilderConfigurator.pdb" target="content\Plugins\NameBuilderConfigurator\" />
-    <file src="bin\Release\NameBuilderConfigurator.dll.config" target="content\Plugins\NameBuilderConfigurator\" />
-    <file src="bin\Release\Assets\**\*.*" target="content\Plugins\NameBuilderConfigurator\Assets\" />
+    <file src="bin\Release\NameBuilderConfigurator.dll" target="lib\net472\Plugins\" />
+    <file src="Assets\Icon\NameBuilder_80x80.png" target="icon.png" />
+    <file src="README.md" target="README.md" />
   </files>
 </package>
