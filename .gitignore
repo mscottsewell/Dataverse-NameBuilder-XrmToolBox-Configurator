@@ -1,7 +1,6 @@
 # Build results
 bin/
 obj/
-Ready To Run/
 [Bb]uild/
 [Bb]in*
 [Oo]bj*
@@ -54,7 +53,6 @@ TestResult*/
 # Publish artifacts
 *.zip
 *.cab
-Ready To Run.zip
 
 # OS files
 Thumbs.db
