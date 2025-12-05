@@ -21,6 +21,7 @@ _ReSharper*/
 .idea/
 
 # NuGet packages
+.nuget/
 packages/
 *.nupkg
 *.snupkg

@@ -13,7 +13,7 @@
     <description>Visual designer for building NameBuilder JSON payloads inside XrmToolBox. See the README for usage instructions.</description>
     <releaseNotes>Review CHANGELOG or git history for details.</releaseNotes>
     <tags>XrmToolBox Dataverse NameBuilder Plugin</tags>
-    <icon>icon.png</icon>
+    <iconUrl>https://raw.githubusercontent.com/mscottsewell/Dataverse-NameBuilder-XrmToolBox-Configurator/main/Assets/Icon/NameBuilder_32x32.png</iconUrl>
     <readme>README.md</readme>
     <dependencies>
       <dependency id="XrmToolBoxPackage" version="[1.2025.10.74,)" />
@@ -21,7 +21,6 @@
   </metadata>
   <files>
     <file src="bin\Release\NameBuilderConfigurator.dll" target="lib\net472\Plugins\" />
-    <file src="Assets\Icon\NameBuilder_80x80.png" target="icon.png" />
     <file src="README.md" target="README.md" />
   </files>
 </package>

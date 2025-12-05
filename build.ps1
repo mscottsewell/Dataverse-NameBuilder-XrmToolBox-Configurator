@@ -149,13 +149,6 @@ if ($LASTEXITCODE -eq 0) {
             }
             Write-Host "Plugin deployed to: $pluginFolder" -ForegroundColor Cyan
 
-            $readyFolder = Join-Path $PSScriptRoot "Ready To Run"
-            New-Item -Path $readyFolder -ItemType Directory -Force | Out-Null
-            Copy-Item $dll $readyFolder -Force
-            if (Test-Path $assetSource) {
-                Copy-Item $assetSource (Join-Path $readyFolder "Assets") -Recurse -Force
-            }
-            Write-Host "Ready-to-run artifacts copied to: $readyFolder" -ForegroundColor Cyan
         } else {
             Write-Host "`nXrmToolBox not found. To deploy manually, run:" -ForegroundColor Yellow
             Write-Host "  Copy-Item '$dll' '$pluginFolder\'" -ForegroundColor White
