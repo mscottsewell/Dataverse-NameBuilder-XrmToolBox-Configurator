@@ -32,6 +32,7 @@ namespace NameBuilderConfigurator
         private ToolStripButton exportJsonToolButton;
         private ToolStripButton importJsonToolButton;
         private ToolStripButton retrieveConfigToolButton;
+        private ToolStripButton registerPluginToolButton;
         private ToolStripButton publishToolButton;
         private System.Windows.Forms.Label statusLabel;
         private NumericUpDown maxLengthNumeric;
@@ -66,8 +67,12 @@ namespace NameBuilderConfigurator
         private ConnectionDetail lastConnectionDetail;
         private bool pluginPresenceCheckRunning;
         private bool pluginPresenceVerified;
+        private bool pluginInstallRunning;
+        private PluginPresenceCheckResult lastPluginCheckResult;
+        private string cachedPluginAssemblyPath;
         private static readonly Font SpacePreviewInputFont = new Font("Consolas", 9F);
         private static readonly Font SpacePreviewLabelFont = new Font("Consolas", 8F);
+        private const string EmbeddedNameBuilderMonoline32Png = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAAEEfUpiAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsIAAA7CARUoSoAAAAAZdEVYdFNvZnR3YXJlAFBhaW50Lk5FVCA1LjEuMTGKCBbOAAAAuGVYSWZJSSoACAAAAAUAGgEFAAEAAABKAAAAGwEFAAEAAABSAAAAKAEDAAEAAAACAAAAMQECABEAAABaAAAAaYcEAAEAAABsAAAAAAAAAPJ2AQDoAwAA8nYBAOgDAABQYWludC5ORVQgNS4xLjExAAADAACQBwAEAAAAMDIzMAGgAwABAAAAAQAAAAWgBAABAAAAlgAAAAAAAAACAAEAAgAEAAAAUjk4AAIABwAEAAAAMDEwMAAAAABc7WH6CeiquwAABUxJREFUSEu1l29sk1Ubxn9DjUvriJHUBa3LjAV5y3CpCy4EwRpjYyYJ9kWStyzwfpl+WMhK/NI0mhANNgsSAiYNIQQ2CVlAkxltyFz6QnUZwjsWGN2HOf44ATMXtjDtUhqt8/LD+pT2rJsT9fepz7mv677POc95zumBHDabbdr6DfCkJAEsyjU8YEXKAKxoIa8WPSkHVo6pqSnKysrGAGhsbJQkORwOASsKnRW3bt2y3LOKADA9PS1JqqyszJgxZTIZ7d27V263W2NjY5qYmBDwZl4RCoUkSX6/X06nU5FIpGSZy0Cn2QjAlStXCjs4M6RC8lFJq1atyppxrBnOZShJYk5BLBaTJNXU1Gjt2rWSpMbGxrtCyylJo6OjkqShoaGiTP+fmJhQMpmUx+PR6tWrBTxWKDDpOXXqVGFiffzxCQGLTWEpGkZGRorMFjt37pw9wFJUVVVlTbNmZudFUzsnnZ2dpvlDU1OKr9PptOrr64vMktTf36+BgQE1NzcLuFLwxcwQjUYlSVNTU2pra5PH49GGDRuUSOTfr7Zt26br169LMz1qKkoAOGOxmOrq6hQIBJRMJvNGSWpubpYkeb1eVVVVLWgyNwBf/ScQ0PDwsFV13BTNx4mKiooscA34txmcj/KOjg7F4/GiIQAXTOFcfOdwOIrMkpTJZAQ8YopnEQ6HdfPmTdMvzfTidVM/i6VLl6ZNowXgNvWlWG0aNbNNLOjVAWC321NmAuBfpm4+3i80x+PxhVcHPgLGCxOk02kBj5tCk/pgMChJ6uvrK/RLklwul9rb21VbW3sHeM80v9zU1KRvhr+RJKVSKXm9Xrndbrndbu3atSufyOfzKRwOzxpSkyVIJpNqamrS8uXL1dramt8k72TuqLa2VpIUjUZnJXgtX6IEvb296ujoyD8DP5oJADItLS1yu906dOiQ0uni9RSPx3X79m1rP3/GNAN4VqxY8XN3d7ckKZvNKhqNyuVyKRQKyWazWXv9adNYiieA1kX3Lxpvb2+XJCUSCQGbTOGf4RHgU7/fr76+PqVSdxdrKpXSuXPntHnzZgFfAEtN81/lnUgkou7ublVWVuratWv54qXYs2ePgN1mknvlucCWgI4ePSproS+EQCAg4AUzmUnx0VKaxRUPVbB161b27dtnxubE6XQCPGy23yuff9XTYw5yTi5cuLDg1fpniForej6OHz+u3Ib2j/DZwMCAWTPP8PCwgP+ZpvlYyBoo5Pvx8bmP9snJSYAfzPZ75T7gLeCnrq4u+f1+7d+/3xz0LA4fPizgW+AEEAYagKeAB80CpSgD3nW73b8ODg4WJe7p6ZHdblckEtHg4KBSqZR+yWaVzWaVSqU0NDSk1tZW2Ww29ZRYsLt37xYg4BWzaCFvbN++XSdPnlRLS4vWrFkjl8ul9evXKxwOq6urS2NjY/mk2WxWmUxG1iXGJBaLqby8XG1tbZKkgwcPyvxTeH/hA8CyZctoaGigoaHBDOWZnJzk8uXLnD9/nt7eXi5dugSAx+PB6XRy7NgxgsEgoVCITObuxSqdTpObhTkpB05UV1crGAyqs7NTIyMjc46wFMFgUOb94sCBA9b0/9csWGY25Galr7+/31NXVwe5K+fFixdJJBKcPn2a0dFRqqur8Xq9rFu3jpUrV7JkyRIAduzYwaZNM4eez+fjyJEj2O12Nm7c+CXwEvBbYbFSHbBYBLiAZ4HngeccDsfTfr9/sc/no76+3tpuAbhx4wZnz57l6tWreDweampq2LJlC2fOnPkg9zVMF2X/m3g0d3F6GzgJjAKTwCe5zv8hvwOi70cqFJ6k9QAAAABJRU5ErkJggg==";
 
         public NameBuilderConfiguratorControl()
         {
@@ -85,7 +90,10 @@ namespace NameBuilderConfigurator
                 cachedPluginSteps.Clear();
                 activePluginType = null;
                 activeRegistryStep = null;
+                lastPluginCheckResult = null;
             }
+
+            UpdatePluginInstallButtonState();
 
             if (newService != null)
             {
@@ -134,6 +142,16 @@ namespace NameBuilderConfigurator
             };
             retrieveConfigToolButton.Click += RetrieveConfigurationToolButton_Click;
             ribbon.Items.Add(retrieveConfigToolButton);
+
+            registerPluginToolButton = new ToolStripButton
+            {
+                Text = "Register NameBuilder Plug-in",
+                DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
+                Enabled = false,
+                Image = LoadToolbarIcon("NameBuilder_Monoline_32x32.png", SystemIcons.Shield)
+            };
+            registerPluginToolButton.Click += RegisterPluginToolButton_Click;
+            ribbon.Items.Add(registerPluginToolButton);
 
             ribbon.Items.Add(new ToolStripSeparator());
             
@@ -546,6 +564,8 @@ namespace NameBuilderConfigurator
                     EnsureNameBuilderPluginPresence();
                 }
             };
+
+            UpdatePluginInstallButtonState();
             this.ResumeLayout();
         }
 
@@ -557,6 +577,7 @@ namespace NameBuilderConfigurator
             }
 
             pluginPresenceCheckRunning = true;
+            UpdatePluginInstallButtonState();
 
             WorkAsync(new WorkAsyncInfo
             {
@@ -568,6 +589,7 @@ namespace NameBuilderConfigurator
                 PostWorkCallBack = (args) =>
                 {
                     pluginPresenceCheckRunning = false;
+                    UpdatePluginInstallButtonState();
 
                     if (args.Error != null)
                     {
@@ -578,6 +600,7 @@ namespace NameBuilderConfigurator
 
                     if (args.Result is PluginPresenceCheckResult result)
                     {
+                        lastPluginCheckResult = result;
                         if (!result.IsInstalled)
                         {
                             pluginPresenceVerified = false;
@@ -589,7 +612,9 @@ namespace NameBuilderConfigurator
                         else
                         {
                             pluginPresenceVerified = true;
-                            statusLabel.Text = "NameBuilder plug-in registration verified.";
+                            statusLabel.Text = string.IsNullOrWhiteSpace(result.InstalledVersion)
+                                ? "NameBuilder plug-in registration verified."
+                                : $"NameBuilder plug-in verified (v{result.InstalledVersion}).";
                             statusLabel.ForeColor = Color.ForestGreen;
 
                             if (result.ResolvedPluginType != null)
@@ -597,6 +622,9 @@ namespace NameBuilderConfigurator
                                 activePluginType = result.ResolvedPluginType;
                             }
                         }
+
+                        UpdatePluginInstallButtonState();
+                        SetActiveRegistryStep(activeRegistryStep);
                     }
                 }
             });
@@ -606,7 +634,7 @@ namespace NameBuilderConfigurator
         {
             var assemblyQuery = new QueryExpression("pluginassembly")
             {
-                ColumnSet = new ColumnSet("pluginassemblyid", "name"),
+                ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "modifiedon"),
                 Criteria = new FilterExpression
                 {
                     Conditions =
@@ -622,7 +650,8 @@ namespace NameBuilderConfigurator
                 return new PluginPresenceCheckResult
                 {
                     IsInstalled = false,
-                    Message = "The NameBuilder plug-in assembly is missing in this Dataverse environment. The NameBuilder Plugin must be installed first."
+                    Message = "The NameBuilder plug-in assembly is missing in this Dataverse environment. Use Register NameBuilder Plug-in to install it before continuing.",
+                    AssemblyName = "NameBuilder"
                 };
             }
 
@@ -651,15 +680,207 @@ namespace NameBuilderConfigurator
                 return new PluginPresenceCheckResult
                 {
                     IsInstalled = false,
-                    Message = "No plug-in types were found under the NameBuilder assembly. The NameBuilder Plugin must be installed first."
+                    Message = "No plug-in types were found under the NameBuilder assembly. Use Register NameBuilder Plug-in to reinstall the plug-in.",
+                    PluginAssemblyId = assembly.Id,
+                    InstalledVersion = assembly.GetAttributeValue<string>("version"),
+                    AssemblyName = assembly.GetAttributeValue<string>("name") ?? "NameBuilder",
+                    RegisteredPluginTypes = pluginTypes
                 };
             }
 
             return new PluginPresenceCheckResult
             {
                 IsInstalled = true,
-                ResolvedPluginType = ResolvePluginType(pluginTypes) ?? pluginTypes.FirstOrDefault()
+                ResolvedPluginType = ResolvePluginType(pluginTypes) ?? pluginTypes.FirstOrDefault(),
+                InstalledVersion = assembly.GetAttributeValue<string>("version"),
+                PluginAssemblyId = assembly.Id,
+                AssemblyName = assembly.GetAttributeValue<string>("name") ?? "NameBuilder",
+                LastUpdatedOn = assembly.GetAttributeValue<DateTime?>("modifiedon"),
+                RegisteredPluginTypes = pluginTypes
             };
+        }
+
+        private void RegisterPluginToolButton_Click(object sender, EventArgs e)
+        {
+            if (Service == null)
+            {
+                MessageBox.Show("Please connect to a Dataverse environment before installing the plug-in.",
+                    "Not Connected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var defaultPath = ResolveLocalPluginAssemblyPath();
+            var statusInfo = BuildPluginRegistrationStatusInfo();
+
+            using (var dialog = new PluginRegistrationDialog(defaultPath, statusInfo))
+            {
+                if (dialog.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedAssemblyPath))
+                {
+                    StartPluginInstallation(dialog.SelectedAssemblyPath);
+                }
+            }
+        }
+
+        private void StartPluginInstallation(string assemblyPath)
+        {
+            if (string.IsNullOrWhiteSpace(assemblyPath) || !File.Exists(assemblyPath))
+            {
+                MessageBox.Show(this, "Select a valid NameBuilder.dll file before continuing.",
+                    "Assembly Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            pluginInstallRunning = true;
+            UpdatePluginInstallButtonState();
+
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = "Registering NameBuilder plug-in...",
+                AsyncArgument = assemblyPath,
+                Work = (worker, args) =>
+                {
+                    var path = (string)args.Argument;
+                    var installer = new PluginAssemblyInstaller(Service);
+                    args.Result = installer.InstallOrUpdate(path);
+                },
+                PostWorkCallBack = (args) =>
+                {
+                    pluginInstallRunning = false;
+                    UpdatePluginInstallButtonState();
+
+                    if (args.Error != null)
+                    {
+                        MessageBox.Show(this, $"Failed to register the NameBuilder plug-in: {args.Error.Message}",
+                            "Registration Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    if (args.Result is PluginAssemblyInstallResult installResult)
+                    {
+                        cachedPluginAssemblyPath = installResult.AssemblyPath;
+                        var action = installResult.CreatedAssembly ? "installed" : "updated";
+                        var versionSuffix = string.IsNullOrWhiteSpace(installResult.Version)
+                            ? string.Empty
+                            : $" (v{installResult.Version})";
+                        statusLabel.Text = $"NameBuilder plug-in {action}{versionSuffix}.";
+                        statusLabel.ForeColor = Color.ForestGreen;
+                    }
+
+                    pluginPresenceVerified = false;
+                    EnsureNameBuilderPluginPresence();
+                }
+            });
+        }
+
+        private PluginRegistrationStatusInfo BuildPluginRegistrationStatusInfo()
+        {
+            var status = new PluginRegistrationStatusInfo
+            {
+                IsInstalled = lastPluginCheckResult?.IsInstalled ?? false,
+                InstalledVersion = lastPluginCheckResult?.InstalledVersion,
+                StatusMessage = lastPluginCheckResult?.Message
+            };
+
+            if (lastPluginCheckResult?.RegisteredPluginTypes != null && lastPluginCheckResult.RegisteredPluginTypes.Count > 0)
+            {
+                status.RegisteredTypes = lastPluginCheckResult.RegisteredPluginTypes
+                    .Select(t => t?.Name ?? t?.TypeName)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+
+            return status;
+        }
+
+        private void UpdatePluginInstallButtonState()
+        {
+            if (registerPluginToolButton == null)
+            {
+                return;
+            }
+
+            var hasConnection = Service != null;
+            registerPluginToolButton.Enabled = hasConnection && !pluginPresenceCheckRunning && !pluginInstallRunning;
+            registerPluginToolButton.Text = pluginPresenceVerified
+                ? "Update NameBuilder Plug-in"
+                : "Register NameBuilder Plug-in";
+
+            if (lastPluginCheckResult != null && lastPluginCheckResult.IsInstalled &&
+                !string.IsNullOrWhiteSpace(lastPluginCheckResult.InstalledVersion))
+            {
+                registerPluginToolButton.ToolTipText =
+                    $"Current Dataverse version: {lastPluginCheckResult.InstalledVersion}. Click to update or repair.";
+            }
+            else
+            {
+                registerPluginToolButton.ToolTipText =
+                    "Deploy or update the NameBuilder plug-in assembly in the connected Dataverse environment.";
+            }
+        }
+
+        private string ResolveLocalPluginAssemblyPath(bool refresh = false)
+        {
+            if (!refresh && !string.IsNullOrWhiteSpace(cachedPluginAssemblyPath) && File.Exists(cachedPluginAssemblyPath))
+            {
+                return cachedPluginAssemblyPath;
+            }
+
+            try
+            {
+                var assemblyLocation = Assembly.GetExecutingAssembly().Location;
+                var searchRoots = new List<string>();
+
+                void AddCandidate(string path)
+                {
+                    if (!string.IsNullOrWhiteSpace(path))
+                    {
+                        searchRoots.Add(path);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(assemblyLocation))
+                {
+                    var baseDirectory = Path.GetDirectoryName(assemblyLocation);
+                    var assemblyName = Path.GetFileNameWithoutExtension(assemblyLocation);
+
+                    AddCandidate(baseDirectory);
+                    if (!string.IsNullOrWhiteSpace(baseDirectory) && !string.IsNullOrWhiteSpace(assemblyName))
+                    {
+                        AddCandidate(Path.Combine(baseDirectory, assemblyName));
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(baseDirectory))
+                    {
+                        var parent = Directory.GetParent(baseDirectory);
+                        if (parent != null)
+                        {
+                            AddCandidate(parent.FullName);
+                            if (!string.IsNullOrWhiteSpace(assemblyName))
+                            {
+                                AddCandidate(Path.Combine(parent.FullName, assemblyName));
+                            }
+                        }
+                    }
+                }
+
+                foreach (var root in searchRoots.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    var candidate = Path.Combine(root, "Assets", "DataversePlugin", "NameBuilder.dll");
+                    if (File.Exists(candidate))
+                    {
+                        cachedPluginAssemblyPath = candidate;
+                        return cachedPluginAssemblyPath;
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore path resolution failures and fall back to browse.
+            }
+
+            cachedPluginAssemblyPath = null;
+            return null;
         }
 
         private void LoadEntitiesButton_Click(object sender, EventArgs e)
@@ -1324,7 +1545,7 @@ namespace NameBuilderConfigurator
             if (publishToolButton == null)
                 return;
 
-            publishToolButton.Enabled = true;
+            publishToolButton.Enabled = pluginPresenceVerified && Service != null;
             var tooltipTarget = activeRegistryStep != null
                 ? activeRegistryStep.Name ?? activeRegistryStep.StepId.ToString()
                 : (currentEntityDisplayName ?? currentEntityLogicalName ?? "this entity");
@@ -2907,29 +3128,113 @@ namespace NameBuilderConfigurator
 
         private Image LoadToolbarIcon(string fileName, Icon fallbackIcon)
         {
-            try
+            foreach (var iconPath in EnumerateIconSearchPaths(fileName))
             {
-                var assemblyPath = Assembly.GetExecutingAssembly().Location;
-                var baseDirectory = Path.GetDirectoryName(assemblyPath);
-                if (!string.IsNullOrWhiteSpace(baseDirectory))
+                try
                 {
-                    var iconPath = Path.Combine(baseDirectory, "Assets", "Icon", fileName);
-                    if (File.Exists(iconPath))
+                    if (!File.Exists(iconPath))
                     {
-                        using (var fs = new FileStream(iconPath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                        using (var original = Image.FromStream(fs))
-                        {
-                            return new Bitmap(original, new Size(18, 18));
-                        }
+                        continue;
+                    }
+
+                    using (var fs = new FileStream(iconPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    using (var original = Image.FromStream(fs))
+                    {
+                        return new Bitmap(original, new Size(18, 18));
                     }
                 }
+                catch
+                {
+                    // Skip invalid paths and continue searching.
+                }
             }
-            catch
+
+            var embedded = LoadEmbeddedToolbarIcon(fileName);
+            if (embedded != null)
             {
-                // Ignore errors and fall back to default icon.
+                return embedded;
             }
 
             return CreateToolbarIcon(fallbackIcon);
+        }
+
+        private IEnumerable<string> EnumerateIconSearchPaths(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                yield break;
+            }
+
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var assemblyPath = Assembly.GetExecutingAssembly().Location;
+            var baseDirectory = string.IsNullOrWhiteSpace(assemblyPath) ? null : Path.GetDirectoryName(assemblyPath);
+
+            var searchRoots = new List<string>();
+            if (!string.IsNullOrWhiteSpace(baseDirectory))
+            {
+                searchRoots.Add(baseDirectory);
+
+                var parent = Directory.GetParent(baseDirectory);
+                if (parent != null)
+                {
+                    searchRoots.Add(parent.FullName);
+                }
+            }
+
+            // Also probe a plugin-specific subfolder under each root (matches NuGet layout).
+            var additionalRoots = new List<string>();
+            foreach (var root in searchRoots)
+            {
+                if (string.IsNullOrWhiteSpace(root))
+                {
+                    continue;
+                }
+
+                additionalRoots.Add(Path.Combine(root, "NameBuilderConfigurator"));
+            }
+            searchRoots.AddRange(additionalRoots);
+
+            foreach (var root in searchRoots.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var candidate = Path.Combine(root, "Assets", "Icon", fileName);
+                if (visited.Add(candidate))
+                {
+                    yield return candidate;
+                }
+
+                candidate = Path.Combine(root, fileName);
+                if (visited.Add(candidate))
+                {
+                    yield return candidate;
+                }
+            }
+        }
+
+        private Image LoadEmbeddedToolbarIcon(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return null;
+            }
+
+            if (fileName.Equals("NameBuilder_Monoline_32x32.png", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var bytes = Convert.FromBase64String(EmbeddedNameBuilderMonoline32Png);
+                    using (var ms = new MemoryStream(bytes))
+                    using (var original = Image.FromStream(ms))
+                    {
+                        return new Bitmap(original, new Size(18, 18));
+                    }
+                }
+                catch
+                {
+                    // Ignore corrupt resources.
+                }
+            }
+
+            return null;
         }
 
         private static Bitmap CreateToolbarIcon(Icon baseIcon)
@@ -4559,6 +4864,11 @@ namespace NameBuilderConfigurator
             public bool IsInstalled { get; set; }
             public string Message { get; set; }
             public PluginTypeInfo ResolvedPluginType { get; set; }
+            public string InstalledVersion { get; set; }
+            public Guid? PluginAssemblyId { get; set; }
+            public string AssemblyName { get; set; }
+            public DateTime? LastUpdatedOn { get; set; }
+            public List<PluginTypeInfo> RegisteredPluginTypes { get; set; } = new List<PluginTypeInfo>();
         }
     }
 }

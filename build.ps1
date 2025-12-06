@@ -137,21 +137,39 @@ if ($LASTEXITCODE -eq 0) {
     
     $dll = "bin\$Configuration\NameBuilderConfigurator.dll"
     if (Test-Path $dll) {
-        $assetSource = Join-Path (Join-Path "bin" $Configuration) "Assets"
-        $pluginFolder = "$env:APPDATA\MscrmTools\XrmToolBox\Plugins"
-        if (Test-Path "$env:APPDATA\MscrmTools\XrmToolBox") {
+        $buildAssets = Join-Path (Join-Path "bin" $Configuration) "Assets"
+        $sourceAssets = Join-Path $PSScriptRoot "Assets"
+        $xrmRoot = "$env:APPDATA\MscrmTools\XrmToolBox"
+        $pluginsRoot = Join-Path $xrmRoot "Plugins"
+        $pluginFolder = Join-Path $pluginsRoot "NameBuilderConfigurator"
+        if (Test-Path $xrmRoot) {
             Write-Host "`nDeploying to XrmToolBox..." -ForegroundColor Green
             New-Item -Path $pluginFolder -ItemType Directory -Force | Out-Null
-            Copy-Item $dll "$pluginFolder\" -Force
+            New-Item -Path $pluginsRoot -ItemType Directory -Force | Out-Null
 
-            if (Test-Path $assetSource) {
-                Copy-Item $assetSource "$pluginFolder\Assets" -Recurse -Force
+            Copy-Item $dll (Join-Path $pluginsRoot "NameBuilderConfigurator.dll") -Force
+
+            $configPath = "bin\$Configuration\NameBuilderConfigurator.dll.config"
+            if (Test-Path $configPath) {
+                Copy-Item $configPath (Join-Path $pluginFolder "NameBuilderConfigurator.dll.config") -Force
             }
+
+            $assetDestination = Join-Path $pluginFolder "Assets"
+            if (Test-Path $assetDestination) {
+                Remove-Item $assetDestination -Recurse -Force
+            }
+
+            if (Test-Path $buildAssets) {
+                Copy-Item $buildAssets $assetDestination -Recurse -Force
+            } elseif (Test-Path $sourceAssets) {
+                Copy-Item $sourceAssets $assetDestination -Recurse -Force
+            }
+
             Write-Host "Plugin deployed to: $pluginFolder" -ForegroundColor Cyan
 
         } else {
             Write-Host "`nXrmToolBox not found. To deploy manually, run:" -ForegroundColor Yellow
-            Write-Host "  Copy-Item '$dll' '$pluginFolder\'" -ForegroundColor White
+            Write-Host "  Copy-Item '$dll' '$pluginsRoot'" -ForegroundColor White
         }
     }
 } else {

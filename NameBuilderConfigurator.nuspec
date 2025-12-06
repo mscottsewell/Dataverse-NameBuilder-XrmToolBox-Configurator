@@ -21,6 +21,8 @@
   </metadata>
   <files>
     <file src="bin\Release\NameBuilderConfigurator.dll" target="lib\net472\Plugins\" />
+    <file src="Assets\**\*.*" target="content\Plugins\NameBuilderConfigurator\Assets\" />
+    <file src="Assets\Icon\NameBuilder_80x80.png" target="icon.png" />
     <file src="README.md" target="README.md" />
   </files>
 </package>
