@@ -1,6 +1,7 @@
 # NameBuilder Configurator – XrmToolBox Plugin
 
 > Visual designer for the [NameBuilder](https://github.com/mscottsewell/Dataverse-NameBuilder) Dataverse plug-in. Connect through XrmToolBox, assemble name patterns, preview the output, and publish JSON back to Create/Update steps without writing code.
+<img width="1465" height="934" alt="image" src="https://github.com/user-attachments/assets/f1b46662-96e3-4801-aa33-9be79181a4e5" />
 
 ## Table of Contents
 
