@@ -11,6 +11,7 @@ using System.Text;
 using System.IO;
 using System.Reflection;
 using System.Globalization;
+using System.Security.Cryptography;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
@@ -21,6 +22,7 @@ namespace NameBuilderConfigurator
 {
     public partial class NameBuilderConfiguratorControl : PluginControlBase
     {
+        private ComboBox solutionDropdown;
         private ComboBox entityDropdown;
         private ComboBox viewDropdown;
         private ComboBox sampleRecordDropdown;
@@ -42,6 +44,19 @@ namespace NameBuilderConfigurator
         private System.Windows.Forms.Label propertiesTitleLabel;
         private FieldBlockControl selectedBlock = null;
         private FieldBlockControl entityHeaderBlock = null;
+        private readonly ToolTip helpToolTip;
+        private SplitContainer leftRightSplitter;
+        private SplitContainer middleRightSplitter;
+        private SplitContainer rightTopBottomSplitter;
+        private readonly Dictionary<Guid, HashSet<Guid>> solutionEntityCache = new Dictionary<Guid, HashSet<Guid>>();
+        private readonly HashSet<Guid> solutionEntityLoadsInProgress = new HashSet<Guid>();
+        private List<SolutionItem> solutions = new List<SolutionItem>();
+        private Guid? currentSolutionId;
+        private bool solutionsLoading;
+        private bool suppressSolutionSelectionChanged;
+        private bool suppressEntitySelectionChanged;
+        private bool suppressViewSelectionChanged;
+        private const string DefaultSolutionUniqueName = "Default";
         
         private List<EntityMetadata> entities = new List<EntityMetadata>();
         private List<AttributeMetadata> currentAttributes = new List<AttributeMetadata>();
@@ -59,6 +74,7 @@ namespace NameBuilderConfigurator
         private PluginTypeInfo activePluginType;
         private List<PluginStepInfo> cachedPluginSteps = new List<PluginStepInfo>();
         private bool suppressBlockSelection;
+        private readonly Dictionary<string, Dictionary<Guid, Entity>> sampleRecordCache = new Dictionary<string, Dictionary<Guid, Entity>>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Guid> sdkMessageCache = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Guid> messageFilterCache = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<Guid, (string Primary, string Secondary)> messageFilterDetailsCache = new Dictionary<Guid, (string, string)>();
@@ -70,12 +86,23 @@ namespace NameBuilderConfigurator
         private bool pluginInstallRunning;
         private PluginPresenceCheckResult lastPluginCheckResult;
         private string cachedPluginAssemblyPath;
+        private string cachedLocalPluginHash;
+        private Action pendingPostInstallAction;
+        private bool pendingEntityRefreshAfterSolutions;
         private static readonly Font SpacePreviewInputFont = new Font("Consolas", 9F);
         private static readonly Font SpacePreviewLabelFont = new Font("Consolas", 8F);
         private const string EmbeddedNameBuilderMonoline32Png = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAAEEfUpiAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsIAAA7CARUoSoAAAAAZdEVYdFNvZnR3YXJlAFBhaW50Lk5FVCA1LjEuMTGKCBbOAAAAuGVYSWZJSSoACAAAAAUAGgEFAAEAAABKAAAAGwEFAAEAAABSAAAAKAEDAAEAAAACAAAAMQECABEAAABaAAAAaYcEAAEAAABsAAAAAAAAAPJ2AQDoAwAA8nYBAOgDAABQYWludC5ORVQgNS4xLjExAAADAACQBwAEAAAAMDIzMAGgAwABAAAAAQAAAAWgBAABAAAAlgAAAAAAAAACAAEAAgAEAAAAUjk4AAIABwAEAAAAMDEwMAAAAABc7WH6CeiquwAABUxJREFUSEu1l29sk1Ubxn9DjUvriJHUBa3LjAV5y3CpCy4EwRpjYyYJ9kWStyzwfpl+WMhK/NI0mhANNgsSAiYNIQQ2CVlAkxltyFz6QnUZwjsWGN2HOf44ATMXtjDtUhqt8/LD+pT2rJsT9fepz7mv677POc95zumBHDabbdr6DfCkJAEsyjU8YEXKAKxoIa8WPSkHVo6pqSnKysrGAGhsbJQkORwOASsKnRW3bt2y3LOKADA9PS1JqqyszJgxZTIZ7d27V263W2NjY5qYmBDwZl4RCoUkSX6/X06nU5FIpGSZy0Cn2QjAlStXCjs4M6RC8lFJq1atyppxrBnOZShJYk5BLBaTJNXU1Gjt2rWSpMbGxrtCyylJo6OjkqShoaGiTP+fmJhQMpmUx+PR6tWrBTxWKDDpOXXqVGFiffzxCQGLTWEpGkZGRorMFjt37pw9wFJUVVVlTbNmZudFUzsnnZ2dpvlDU1OKr9PptOrr64vMktTf36+BgQE1NzcLuFLwxcwQjUYlSVNTU2pra5PH49GGDRuUSOTfr7Zt26br169LMz1qKkoAOGOxmOrq6hQIBJRMJvNGSWpubpYkeb1eVVVVLWgyNwBf/ScQ0PDwsFV13BTNx4mKiooscA34txmcj/KOjg7F4/GiIQAXTOFcfOdwOIrMkpTJZAQ8YopnEQ6HdfPmTdMvzfTidVM/i6VLl6ZNowXgNvWlWG0aNbNNLOjVAWC321NmAuBfpm4+3i80x+PxhVcHPgLGCxOk02kBj5tCk/pgMChJ6uvrK/RLklwul9rb21VbW3sHeM80v9zU1KRvhr+RJKVSKXm9Xrndbrndbu3atSufyOfzKRwOzxpSkyVIJpNqamrS8uXL1dramt8k72TuqLa2VpIUjUZnJXgtX6IEvb296ujoyD8DP5oJADItLS1yu906dOiQ0uni9RSPx3X79m1rP3/GNAN4VqxY8XN3d7ckKZvNKhqNyuVyKRQKyWazWXv9adNYiieA1kX3Lxpvb2+XJCUSCQGbTOGf4RHgU7/fr76+PqVSdxdrKpXSuXPntHnzZgFfAEtN81/lnUgkou7ublVWVuratWv54qXYs2ePgN1mknvlucCWgI4ePSproS+EQCAg4AUzmUnx0VKaxRUPVbB161b27dtnxubE6XQCPGy23yuff9XTYw5yTi5cuLDg1fpniForej6OHz+u3Ib2j/DZwMCAWTPP8PCwgP+ZpvlYyBoo5Pvx8bmP9snJSYAfzPZ75T7gLeCnrq4u+f1+7d+/3xz0LA4fPizgW+AEEAYagKeAB80CpSgD3nW73b8ODg4WJe7p6ZHdblckEtHg4KBSqZR+yWaVzWaVSqU0NDSk1tZW2Ww29ZRYsLt37xYg4BWzaCFvbN++XSdPnlRLS4vWrFkjl8ul9evXKxwOq6urS2NjY/mk2WxWmUxG1iXGJBaLqby8XG1tbZKkgwcPyvxTeH/hA8CyZctoaGigoaHBDOWZnJzk8uXLnD9/nt7eXi5dugSAx+PB6XRy7NgxgsEgoVCITObuxSqdTpObhTkpB05UV1crGAyqs7NTIyMjc46wFMFgUOb94sCBA9b0/9csWGY25Galr7+/31NXVwe5K+fFixdJJBKcPn2a0dFRqqur8Xq9rFu3jpUrV7JkyRIAduzYwaZNM4eez+fjyJEj2O12Nm7c+CXwEvBbYbFSHbBYBLiAZ4HngeccDsfTfr9/sc/no76+3tpuAbhx4wZnz57l6tWreDweampq2LJlC2fOnPkg9zVMF2X/m3g0d3F6GzgJjAKTwCe5zv8hvwOi70cqFJ6k9QAAAABJRU5ErkJggg==";
 
         public NameBuilderConfiguratorControl()
         {
+            helpToolTip = new ToolTip
+            {
+                AutoPopDelay = 12000,
+                InitialDelay = 300,
+                ReshowDelay = 100
+            };
+            helpToolTip.ShowAlways = true;
+
             InitializeComponent();
         }
 
@@ -91,14 +118,646 @@ namespace NameBuilderConfigurator
                 activePluginType = null;
                 activeRegistryStep = null;
                 lastPluginCheckResult = null;
+                ResetConnectionScopedSelections();
             }
 
             UpdatePluginInstallButtonState();
 
             if (newService != null)
             {
+                CheckUserPermissions();
                 EnsureNameBuilderPluginPresence();
+                EnsureSolutionsLoaded(ensureEntities: true);
             }
+        }
+
+        /// <summary>Gets a cached font instance to avoid creating multiple font objects.</summary>
+        private Font GetCachedFont(string fontName, float fontSize, FontStyle style = FontStyle.Regular)
+        {
+            // Map to cached field based on parameters
+            if (fontName.Equals("Segoe UI", StringComparison.OrdinalIgnoreCase))
+            {
+                if (fontSize == 8F && style == FontStyle.Regular)
+                    return _fontSegoeUI8 ?? (_fontSegoeUI8 = new Font("Segoe UI", 8F));
+                if (fontSize == 8.5F && style == FontStyle.Regular)
+                    return _fontSegoeUI85 ?? (_fontSegoeUI85 = new Font("Segoe UI", 8.5F));
+                if (fontSize == 9F && style == FontStyle.Regular)
+                    return _fontSegoeUI9 ?? (_fontSegoeUI9 = new Font("Segoe UI", 9F));
+                if (fontSize == 10F && style == FontStyle.Regular)
+                    return _fontSegoeUI10 ?? (_fontSegoeUI10 = new Font("Segoe UI", 10F));
+                if (fontSize == 10F && style == FontStyle.Bold)
+                    return _fontSegoeUI10Bold ?? (_fontSegoeUI10Bold = new Font("Segoe UI", 10F, FontStyle.Bold));
+                if (fontSize == 10F && style == FontStyle.Italic)
+                    return _fontSegoeUI10Italic ?? (_fontSegoeUI10Italic = new Font("Segoe UI", 10F, FontStyle.Italic));
+                if (fontSize == 11F && style == FontStyle.Regular)
+                    return _fontSegoeUI11 ?? (_fontSegoeUI11 = new Font("Segoe UI", 11F));
+                if (fontSize == 11F && style == FontStyle.Bold)
+                    return _fontSegoeUI11Bold ?? (_fontSegoeUI11Bold = new Font("Segoe UI", 11F, FontStyle.Bold));
+                if (fontSize == 12F && style == FontStyle.Bold)
+                    return _fontSegoeUI12Bold ?? (_fontSegoeUI12Bold = new Font("Segoe UI", 12F, FontStyle.Bold));
+                if (fontSize == 7.5F && style == FontStyle.Regular)
+                    return _fontSegoeUI75 ?? (_fontSegoeUI75 = new Font("Segoe UI", 7.5F));
+            }
+            else if (fontName.Equals("Consolas", StringComparison.OrdinalIgnoreCase))
+            {
+                if (fontSize == 9F && style == FontStyle.Regular)
+                    return _fontConsolas9 ?? (_fontConsolas9 = new Font("Consolas", 9F));
+            }
+
+            // Fallback: create new instance if not cached (shouldn't happen in normal usage)
+            return new Font(fontName, fontSize, style);
+        }
+
+        private void CheckUserPermissions()
+        {
+            if (Service == null)
+            {
+                return;
+            }
+
+            try
+            {
+                // Try to query pluginassembly to check if user has customizer permissions
+                var testQuery = new QueryExpression("pluginassembly")
+                {
+                    ColumnSet = new ColumnSet("pluginassemblyid"),
+                    TopCount = 1
+                };
+
+                Service.RetrieveMultiple(testQuery);
+            }
+            catch (Exception ex)
+            {
+                // Check if this is a permission-related error
+                if (ex.Message.Contains("privilege") || ex.Message.Contains("permission") || 
+                    ex.Message.Contains("Access Denied") || ex.Message.Contains("UNSPECIFIED") ||
+                    ex is FaultException)
+                {
+                    DiagnosticLog.LogWarning("Check User Permissions", $"User lacks permissions: {ex.Message}");
+                    statusLabel.Text = "Insufficient Permissions";
+                    statusLabel.ForeColor = Color.Firebrick;
+                    MessageBox.Show(
+                        "You do not have the necessary permissions to use the NameBuilder Configurator.\n\n" +
+                        "This tool requires Customizer or System Administrator permissions in this Dataverse environment.\n\n" +
+                        "Please contact your system administrator to grant you the required permissions.",
+                        "Insufficient Permissions",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    
+                    // Disable all UI controls
+                    solutionDropdown.Enabled = false;
+                    entityDropdown.Enabled = false;
+                    viewDropdown.Enabled = false;
+                    sampleRecordDropdown.Enabled = false;
+                    attributeListBox.Enabled = false;
+                    copyJsonToolButton.Enabled = false;
+                    exportJsonToolButton.Enabled = false;
+                    importJsonToolButton.Enabled = false;
+                    retrieveConfigToolButton.Enabled = false;
+                    registerPluginToolButton.Enabled = false;
+                    publishToolButton.Enabled = false;
+                    targetFieldTextBox.Enabled = false;
+                    enableTracingCheckBox.Enabled = false;
+                    maxLengthNumeric.Enabled = false;
+                }
+            }
+        }
+
+        private void ResetConnectionScopedSelections()
+        {
+            solutions = new List<SolutionItem>();
+            solutionEntityCache.Clear();
+            solutionEntityLoadsInProgress.Clear();
+            currentSolutionId = null;
+            solutionsLoading = false;
+            pendingEntityRefreshAfterSolutions = false;
+            ClearSampleRecordCache();
+
+            if (solutionDropdown != null)
+            {
+                suppressSolutionSelectionChanged = true;
+                solutionDropdown.Items.Clear();
+                solutionDropdown.Text = string.Empty;
+                solutionDropdown.Enabled = false;
+                suppressSolutionSelectionChanged = false;
+            }
+
+            if (entityDropdown != null)
+            {
+                suppressEntitySelectionChanged = true;
+                entityDropdown.Items.Clear();
+                entityDropdown.Text = string.Empty;
+                entityDropdown.Enabled = false;
+                suppressEntitySelectionChanged = false;
+            }
+
+            if (viewDropdown != null)
+            {
+                suppressViewSelectionChanged = true;
+                viewDropdown.Items.Clear();
+                viewDropdown.Text = string.Empty;
+                viewDropdown.Enabled = false;
+                suppressViewSelectionChanged = false;
+            }
+
+            sampleRecordDropdown?.Items.Clear();
+            attributeListBox?.Items.Clear();
+        }
+
+        private void ClearSampleRecordCache()
+        {
+            sampleRecordCache.Clear();
+        }
+
+        private void EnsureSolutionsLoaded(bool ensureEntities = false)
+        {
+            if (Service == null || solutionDropdown == null)
+            {
+                return;
+            }
+
+            if (solutionsLoading)
+            {
+                if (ensureEntities)
+                {
+                    pendingEntityRefreshAfterSolutions = true;
+                }
+                return;
+            }
+
+            if (solutionDropdown.Items.Count == 0)
+            {
+                if (ensureEntities)
+                {
+                    pendingEntityRefreshAfterSolutions = true;
+                }
+                ExecuteMethod(LoadSolutions);
+                return;
+            }
+
+            if (ensureEntities)
+            {
+                pendingEntityRefreshAfterSolutions = false;
+                ExecuteMethod(LoadEntities);
+            }
+        }
+
+        private void LoadSolutions()
+        {
+            if (Service == null)
+            {
+                return;
+            }
+
+            solutionsLoading = true;
+
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = "Loading solutions...",
+                Work = (worker, args) =>
+                {
+                    var query = new QueryExpression("solution")
+                    {
+                        ColumnSet = new ColumnSet("solutionid", "friendlyname", "uniquename", "ismanaged", "isvisible"),
+                        Orders = { new OrderExpression("friendlyname", OrderType.Ascending) }
+                    };
+
+                    args.Result = Service.RetrieveMultiple(query).Entities;
+                },
+                PostWorkCallBack = (args) =>
+                {
+                    solutionsLoading = false;
+
+                    if (args.Error != null)
+                    {
+                        MessageBox.Show($"Unable to load solutions: {args.Error.Message}", "Solution Load Failed",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+
+                    var solutionEntities = (args.Result as IEnumerable<Entity>) ?? Enumerable.Empty<Entity>();
+                    solutions = solutionEntities
+                        .Select(e => new SolutionItem
+                        {
+                            SolutionId = e.Id,
+                            FriendlyName = e.GetAttributeValue<string>("friendlyname") ?? e.GetAttributeValue<string>("uniquename") ?? e.Id.ToString(),
+                            UniqueName = e.GetAttributeValue<string>("uniquename"),
+                            IsManaged = e.GetAttributeValue<bool?>("ismanaged") ?? false
+                        })
+                        .OrderBy(s => s.FriendlyName, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    if (solutions.Count == 0)
+                    {
+                        solutions.Add(new SolutionItem
+                        {
+                            SolutionId = Guid.Empty,
+                            FriendlyName = "(Default Solution)",
+                            UniqueName = DefaultSolutionUniqueName,
+                            IsManaged = false
+                        });
+                    }
+
+                    var defaultIndex = solutions.FindIndex(IsDefaultSolution);
+                    if (defaultIndex > 0)
+                    {
+                        var defaults = solutions[defaultIndex];
+                        solutions.RemoveAt(defaultIndex);
+                        solutions.Insert(0, defaults);
+                    }
+
+                    suppressSolutionSelectionChanged = true;
+                    solutionDropdown.Items.Clear();
+                    foreach (var solution in solutions)
+                    {
+                        solutionDropdown.Items.Add(solution);
+                    }
+                    solutionDropdown.Enabled = true;
+                    suppressSolutionSelectionChanged = false;
+
+                    if (solutionDropdown.Items.Count > 0)
+                    {
+                        RestoreSolutionSelectionFromPreferences();
+                    }
+
+                    if (pendingEntityRefreshAfterSolutions)
+                    {
+                        pendingEntityRefreshAfterSolutions = false;
+                        ExecuteMethod(LoadEntities);
+                    }
+                }
+            });
+        }
+
+        private void RestoreSolutionSelectionFromPreferences()
+        {
+            if (solutionDropdown == null || solutionDropdown.Items.Count == 0)
+            {
+                return;
+            }
+
+            var preference = GetConnectionPreference();
+            SolutionItem target = null;
+
+            if (preference?.LastSolutionId != null)
+            {
+                target = solutionDropdown.Items.Cast<SolutionItem>()
+                    .FirstOrDefault(s => s.SolutionId == preference.LastSolutionId.Value);
+            }
+
+            if (target == null && !string.IsNullOrWhiteSpace(preference?.LastSolutionUniqueName))
+            {
+                target = solutionDropdown.Items.Cast<SolutionItem>()
+                    .FirstOrDefault(s => string.Equals(s.UniqueName, preference.LastSolutionUniqueName, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (target == null)
+            {
+                target = solutionDropdown.Items.Cast<SolutionItem>()
+                    .FirstOrDefault(IsDefaultSolution) ?? solutionDropdown.Items.Cast<SolutionItem>().FirstOrDefault();
+            }
+
+            if (target == null)
+            {
+                return;
+            }
+
+            suppressSolutionSelectionChanged = true;
+            solutionDropdown.SelectedItem = target;
+            suppressSolutionSelectionChanged = false;
+
+            HandleSolutionSelectionChanged();
+        }
+
+        private void SolutionDropdown_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (suppressSolutionSelectionChanged)
+            {
+                return;
+            }
+
+            HandleSolutionSelectionChanged();
+        }
+
+        private void HandleSolutionSelectionChanged()
+        {
+            var selectedSolution = solutionDropdown?.SelectedItem as SolutionItem;
+            currentSolutionId = selectedSolution?.SolutionId;
+
+            if (selectedSolution != null)
+            {
+                PersistConnectionPreference(pref =>
+                {
+                    pref.LastSolutionId = selectedSolution.SolutionId;
+                    pref.LastSolutionUniqueName = selectedSolution.UniqueName;
+                });
+            }
+
+            if (selectedSolution == null)
+            {
+                ApplySolutionFilterIfReady();
+                return;
+            }
+
+            if (IsDefaultSolution(selectedSolution))
+            {
+                ApplySolutionFilterIfReady();
+                return;
+            }
+
+            if (solutionEntityCache.ContainsKey(selectedSolution.SolutionId))
+            {
+                ApplySolutionFilterIfReady();
+                return;
+            }
+
+            if (!solutionEntityLoadsInProgress.Contains(selectedSolution.SolutionId))
+            {
+                LoadSolutionEntities(selectedSolution);
+            }
+        }
+
+        private static bool IsDefaultSolution(SolutionItem item)
+        {
+            return item != null &&
+                !string.IsNullOrWhiteSpace(item.UniqueName) &&
+                item.UniqueName.Equals(DefaultSolutionUniqueName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void LoadSolutionEntities(SolutionItem solution)
+        {
+            if (Service == null || solution == null)
+            {
+                return;
+            }
+
+            solutionEntityLoadsInProgress.Add(solution.SolutionId);
+
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = $"Loading entities for {solution.FriendlyName}...",
+                AsyncArgument = solution,
+                Work = (worker, args) =>
+                {
+                    var selected = (SolutionItem)args.Argument;
+                    var metadataIds = new HashSet<Guid>();
+                    var query = new QueryExpression("solutioncomponent")
+                    {
+                        ColumnSet = new ColumnSet("objectid"),
+                        Criteria = new FilterExpression
+                        {
+                            Conditions =
+                            {
+                                new ConditionExpression("solutionid", ConditionOperator.Equal, selected.SolutionId),
+                                new ConditionExpression("componenttype", ConditionOperator.Equal, 1)
+                            }
+                        },
+                        PageInfo = new PagingInfo { Count = 500, PageNumber = 1 }
+                    };
+
+                    EntityCollection page;
+                    do
+                    {
+                        page = Service.RetrieveMultiple(query);
+                        foreach (var component in page.Entities)
+                        {
+                            var objectId = component.GetAttributeValue<Guid?>("objectid");
+                            if (objectId.HasValue)
+                            {
+                                metadataIds.Add(objectId.Value);
+                            }
+                        }
+
+                        if (page.MoreRecords)
+                        {
+                            query.PageInfo.PageNumber++;
+                            query.PageInfo.PagingCookie = page.PagingCookie;
+                        }
+                    }
+                    while (page.MoreRecords);
+
+                    args.Result = new SolutionComponentLoadResult
+                    {
+                        SolutionId = selected.SolutionId,
+                        EntityMetadataIds = metadataIds
+                    };
+                },
+                PostWorkCallBack = (args) =>
+                {
+                    var solutionId = solution.SolutionId;
+                    solutionEntityLoadsInProgress.Remove(solutionId);
+
+                    if (args.Error != null)
+                    {
+                        MessageBox.Show($"Unable to load entities for {solution.FriendlyName}: {args.Error.Message}",
+                            "Solution Filter Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        statusLabel.Text = $"Failed to load entities for {solution.FriendlyName}";
+                        statusLabel.ForeColor = Color.Firebrick;
+                        return;
+                    }
+
+                    if (args.Result is SolutionComponentLoadResult result)
+                    {
+                        solutionEntityCache[result.SolutionId] = result.EntityMetadataIds;
+                    }
+
+                    ApplySolutionFilterIfReady();
+                }
+            });
+        }
+
+        private void ApplySolutionFilterIfReady()
+        {
+            if (entityDropdown == null)
+            {
+                return;
+            }
+
+            if (entities == null || entities.Count == 0)
+            {
+                suppressEntitySelectionChanged = true;
+                entityDropdown.Items.Clear();
+                suppressEntitySelectionChanged = false;
+                entityDropdown.Enabled = false;
+                return;
+            }
+
+            var selectedSolution = solutionDropdown?.SelectedItem as SolutionItem;
+            IEnumerable<EntityMetadata> source = entities;
+
+            if (selectedSolution != null && !IsDefaultSolution(selectedSolution))
+            {
+                if (!solutionEntityCache.TryGetValue(selectedSolution.SolutionId, out var ids))
+                {
+                    suppressEntitySelectionChanged = true;
+                    entityDropdown.Items.Clear();
+                    suppressEntitySelectionChanged = false;
+                    entityDropdown.Enabled = false;
+                    statusLabel.Text = $"Loading entities for {selectedSolution.FriendlyName}...";
+                    statusLabel.ForeColor = Color.DarkGoldenrod;
+                    return;
+                }
+
+                source = entities
+                    .Where(e => e.MetadataId.HasValue && ids.Contains(e.MetadataId.Value))
+                    .ToList();
+            }
+
+            PopulateEntityDropdown(source);
+        }
+
+        private void PopulateEntityDropdown(IEnumerable<EntityMetadata> source)
+        {
+            suppressEntitySelectionChanged = true;
+            entityDropdown.Items.Clear();
+            suppressEntitySelectionChanged = false;
+
+            var entityItems = source?
+                .Select(entity => new EntityItem
+                {
+                    DisplayName = entity.DisplayName?.UserLocalizedLabel?.Label ?? entity.LogicalName,
+                    LogicalName = entity.LogicalName,
+                    Metadata = entity
+                })
+                .ToList() ?? new List<EntityItem>();
+
+            foreach (var item in entityItems)
+            {
+                entityDropdown.Items.Add(item);
+            }
+
+            entityDropdown.Enabled = entityItems.Count > 0;
+
+            if (entityItems.Count == 0)
+            {
+                statusLabel.Text = "No entities match this solution filter.";
+                statusLabel.ForeColor = Color.Firebrick;
+                return;
+            }
+
+            var solution = solutionDropdown?.SelectedItem as SolutionItem;
+            if (solution == null || IsDefaultSolution(solution))
+            {
+                statusLabel.Text = $"Loaded {entityItems.Count} entities.";
+            }
+            else
+            {
+                statusLabel.Text = $"Filtered to {entityItems.Count} entities for {solution.FriendlyName}.";
+            }
+            statusLabel.ForeColor = Color.ForestGreen;
+
+            RestoreEntitySelectionFromPreferences();
+        }
+
+        private void RestoreEntitySelectionFromPreferences()
+        {
+            if (entityDropdown.Items.Count == 0)
+            {
+                return;
+            }
+
+            var preference = GetConnectionPreference();
+            EntityItem target = null;
+
+            if (!string.IsNullOrWhiteSpace(preference?.LastEntityLogicalName))
+            {
+                target = entityDropdown.Items.Cast<EntityItem>()
+                    .FirstOrDefault(i => i.LogicalName.Equals(preference.LastEntityLogicalName, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (target == null)
+            {
+                target = entityDropdown.Items[0] as EntityItem;
+            }
+
+            if (target == null)
+            {
+                return;
+            }
+
+            suppressEntitySelectionChanged = true;
+            entityDropdown.SelectedItem = target;
+            suppressEntitySelectionChanged = false;
+
+            HandleEntitySelectionChanged();
+        }
+
+        private void RestoreViewSelectionFromPreferences()
+        {
+            if (viewDropdown.Items.Count == 0)
+            {
+                return;
+            }
+
+            var preference = GetConnectionPreference();
+            ViewItem target = null;
+
+            if (preference?.LastViewId != null)
+            {
+                target = viewDropdown.Items.Cast<ViewItem>()
+                    .FirstOrDefault(v => v.ViewId == preference.LastViewId.Value);
+            }
+
+            if (target == null)
+            {
+                target = (ViewItem)viewDropdown.Items[0];
+            }
+
+            if (target == null)
+            {
+                return;
+            }
+
+            suppressViewSelectionChanged = true;
+            viewDropdown.SelectedItem = target;
+            suppressViewSelectionChanged = false;
+
+            HandleViewSelectionChanged();
+        }
+
+        private ConnectionPreference GetConnectionPreference()
+        {
+            var key = GetConnectionPreferenceKey();
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return null;
+            }
+
+            return PluginUserSettings.Load().GetConnectionPreference(key);
+        }
+
+        private void PersistConnectionPreference(Action<ConnectionPreference> apply)
+        {
+            if (apply == null)
+            {
+                return;
+            }
+
+            var key = GetConnectionPreferenceKey();
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return;
+            }
+
+            var settings = PluginUserSettings.Load();
+            var preference = settings.GetOrCreateConnectionPreference(key);
+            apply(preference);
+            settings.Save();
+        }
+
+        private string GetConnectionPreferenceKey()
+        {
+            if (lastConnectionDetail == null)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(lastConnectionDetail.ConnectionName))
+            {
+                return lastConnectionDetail.ConnectionName;
+            }
+
+            return lastConnectionDetail.GetHashCode().ToString(CultureInfo.InvariantCulture);
         }
 
         private void InitializeComponent()
@@ -127,61 +786,67 @@ namespace NameBuilderConfigurator
             
             var loadEntitiesToolButton = new ToolStripButton
             {
-                Text = "Load Entities",
+                Text = "Load Metadata",
                 DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
                 Image = LoadToolbarIcon("LoadEntities.png", SystemIcons.Application)
             };
             loadEntitiesToolButton.Click += LoadEntitiesButton_Click;
+            loadEntitiesToolButton.ToolTipText = "Reload entity metadata and refresh the Available Attributes list.";
             ribbon.Items.Add(loadEntitiesToolButton);
             
             retrieveConfigToolButton = new ToolStripButton
             {
-                Text = "Retrieve Configuration",
+                Text = "Retrieve Config",
                 DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
                 Image = LoadToolbarIcon("RetrieveConfiguration.png", SystemIcons.Information)
             };
             retrieveConfigToolButton.Click += RetrieveConfigurationToolButton_Click;
+            retrieveConfigToolButton.ToolTipText = "Pull an existing NameBuilder plug-in step configuration from Dataverse.";
             ribbon.Items.Add(retrieveConfigToolButton);
 
             registerPluginToolButton = new ToolStripButton
             {
-                Text = "Register NameBuilder Plug-in",
+                Text = "Register Plug-in",
                 DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
                 Enabled = false,
                 Image = LoadToolbarIcon("NameBuilder_Monoline_32x32.png", SystemIcons.Shield)
             };
             registerPluginToolButton.Click += RegisterPluginToolButton_Click;
+            registerPluginToolButton.ToolTipText = "Verify or deploy the NameBuilder plug-in assembly into the connected environment.";
             ribbon.Items.Add(registerPluginToolButton);
 
             ribbon.Items.Add(new ToolStripSeparator());
             
             importJsonToolButton = new ToolStripButton
             {
-                Text = "Import JSON",
+                Text = "Import file",
                 DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
                 Image = LoadToolbarIcon("ImportJSON.png", SystemIcons.Shield)
             };
             importJsonToolButton.Click += ImportJsonToolButton_Click;
+            importJsonToolButton.ToolTipText = "Load a NameBuilder JSON file from disk and rebuild the designer.";
             ribbon.Items.Add(importJsonToolButton);
 
             exportJsonToolButton = new ToolStripButton
             {
-                Text = "Export JSON",
+                Text = "Export file",
                 DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
                 Enabled = false,
                 Image = LoadToolbarIcon("ExportJSON.png", SystemIcons.Asterisk)
             };
             exportJsonToolButton.Click += ExportJsonButton_Click;
+            exportJsonToolButton.ToolTipText = "Save the current NameBuilder payload to a JSON file.";
             ribbon.Items.Add(exportJsonToolButton);
 
             copyJsonToolButton = new ToolStripButton
             {
-                Text = "Copy JSON",
+                Text = "Copy to clipboard",
                 DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
                 Enabled = false,
                 Image = LoadToolbarIcon("CopyJSON.png", SystemIcons.Question)
             };
             copyJsonToolButton.Click += CopyJsonButton_Click;
+            copyJsonToolButton.ToolTipText = "Copy the generated JSON to the clipboard.";
             ribbon.Items.Add(copyJsonToolButton);
 
             ribbon.Items.Add(new ToolStripSeparator());
@@ -194,6 +859,7 @@ namespace NameBuilderConfigurator
                 Image = LoadToolbarIcon("PublishConfiguration.png", SystemIcons.Warning)
             };
             publishToolButton.Click += PublishToolButton_Click;
+            publishToolButton.ToolTipText = "Push the JSON back to the selected NameBuilder steps (Create/Update).";
             ribbon.Items.Add(publishToolButton);
             
             // Store references for enabling/disabling
@@ -208,44 +874,53 @@ namespace NameBuilderConfigurator
             
             // CONTENT AREA - Split containers for resizable IDE-style layout
             // Left panel goes to top; preview spans only middle+right via a nested top panel on the right side
-            var leftRightSplitter = new SplitContainer
+            // Load settings early to calculate proper initial distances
+            var initialSettings = PluginUserSettings.Load();
+            var estimatedWidth = 1400; // Typical initial width
+            var leftInitial = Math.Max(250, (int)(estimatedWidth * initialSettings.LeftPanelProportion));
+            var rightRemaining = estimatedWidth - leftInitial;
+            var rightPanelInitial = Math.Max(300, (int)(estimatedWidth * initialSettings.RightPanelProportion));
+            var middleInitial = Math.Max(200, rightRemaining - rightPanelInitial);
+            
+            leftRightSplitter = new SplitContainer
             {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Vertical,
-                SplitterDistance = 320
+                SplitterDistance = leftInitial
             };
 
             // Right side is split vertically: top preview and bottom content
-            var rightTopBottomSplitter = new SplitContainer
+            rightTopBottomSplitter = new SplitContainer
             {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Horizontal,
-                SplitterDistance = 22
+                SplitterDistance = Math.Max(30, Math.Min(initialSettings.PreviewHeight, 100))
             };
 
             // Bottom of right side: split between middle and right panels
-            var middleRightSplitter = new SplitContainer
+            middleRightSplitter = new SplitContainer
             {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Vertical,
-                SplitterDistance = 360
+                SplitterDistance = middleInitial
             };
             
-            // LEFT PANEL - Entity/View/Sample/Attributes
+            // LEFT PANEL - Solution/Entity/View/Sample/Attributes
             var leftPanel = new Panel { 
                 Dock = DockStyle.Fill, 
                 Padding = new Padding(6)
             };
-            
-            // Entity
-            var entityLabel = new System.Windows.Forms.Label {
-                Text = "Entity:",
+
+            // Solution
+            var solutionLabel = new System.Windows.Forms.Label
+            {
+                Text = "Solution:",
                 Location = new Point(5, 5),
                 AutoSize = true
             };
-            leftPanel.Controls.Add(entityLabel);
-            
-            entityDropdown = new ComboBox
+            leftPanel.Controls.Add(solutionLabel);
+
+            solutionDropdown = new ComboBox
             {
                 Location = new Point(5, 25),
                 Width = leftPanel.ClientSize.Width - 16,
@@ -254,20 +929,42 @@ namespace NameBuilderConfigurator
                 Enabled = false,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
+            solutionDropdown.SelectedIndexChanged += SolutionDropdown_SelectedIndexChanged;
+            helpToolTip.SetToolTip(solutionDropdown, "Filter entities by Dataverse solution. Display names are shown while the solutionId is stored.");
+            leftPanel.Controls.Add(solutionDropdown);
+            
+            // Entity
+            var entityLabel = new System.Windows.Forms.Label {
+                Text = "Entity:",
+                Location = new Point(5, 65),
+                AutoSize = true
+            };
+            leftPanel.Controls.Add(entityLabel);
+            
+            entityDropdown = new ComboBox
+            {
+                Location = new Point(5, 85),
+                Width = leftPanel.ClientSize.Width - 16,
+                Height = 23,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Enabled = false,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
             entityDropdown.SelectedIndexChanged += EntityDropdown_SelectedIndexChanged;
+            helpToolTip.SetToolTip(entityDropdown, "Choose the Dataverse entity whose NameBuilder pattern you want to edit.");
             leftPanel.Controls.Add(entityDropdown);
             
             // View
             var viewLabel = new System.Windows.Forms.Label {
                 Text = "View (optional):",
-                Location = new Point(5, 60),
+                Location = new Point(5, 120),
                 AutoSize = true
             };
             leftPanel.Controls.Add(viewLabel);
             
             viewDropdown = new ComboBox
             {
-                Location = new Point(5, 80),
+                Location = new Point(5, 140),
                 Width = leftPanel.ClientSize.Width - 16,
                 Height = 23,
                 DropDownStyle = ComboBoxStyle.DropDownList,
@@ -275,19 +972,20 @@ namespace NameBuilderConfigurator
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             viewDropdown.SelectedIndexChanged += ViewDropdown_SelectedIndexChanged;
+            helpToolTip.SetToolTip(viewDropdown, "Optional system/personal view used to scope sample records.");
             leftPanel.Controls.Add(viewDropdown);
             
             // Sample Record
             var sampleLabel = new System.Windows.Forms.Label {
                 Text = "Sample Record:",
-                Location = new Point(5, 115),
+                Location = new Point(5, 175),
                 AutoSize = true
             };
             leftPanel.Controls.Add(sampleLabel);
             
             sampleRecordDropdown = new ComboBox
             {
-                Location = new Point(5, 135),
+                Location = new Point(5, 195),
                 Width = leftPanel.ClientSize.Width - 16,
                 Height = 23,
                 DropDownStyle = ComboBoxStyle.DropDownList,
@@ -295,12 +993,13 @@ namespace NameBuilderConfigurator
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             sampleRecordDropdown.SelectedIndexChanged += SampleRecordDropdown_SelectedIndexChanged;
+            helpToolTip.SetToolTip(sampleRecordDropdown, "Pick a row to feed the live preview (records come from the selected view).");
             leftPanel.Controls.Add(sampleRecordDropdown);
             
             // Attributes
             var attributeLabel = new System.Windows.Forms.Label {
                 Text = "Available Attributes:(double-click to add)",
-                Location = new Point(5, 170),
+                Location = new Point(5, 230),
                 AutoSize = true
             };
             leftPanel.Controls.Add(attributeLabel);
@@ -308,13 +1007,14 @@ namespace NameBuilderConfigurator
             // Attributes listbox - scales between label above and status below
             attributeListBox = new ListBox
             {
-                Location = new Point(5, 190),
+                Location = new Point(5, 250),
                 Width = leftPanel.ClientSize.Width - 16,
                 Height = 200,
                 Enabled = false,
                 Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
             };
             attributeListBox.DoubleClick += AttributeListBox_DoubleClick;
+            helpToolTip.SetToolTip(attributeListBox, "Double-click an attribute to append it as a field block; logical name is shown in parentheses.");
             leftPanel.Controls.Add(attributeListBox);
             
             // Status label pinned to bottom (60px from bottom to leave room for button)
@@ -326,10 +1026,12 @@ namespace NameBuilderConfigurator
                 ForeColor = Color.Gray,
                 Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
             };
+            helpToolTip.SetToolTip(statusLabel, "Shows progress for metadata loads, publishes, or plugin checks.");
             leftPanel.Controls.Add(statusLabel);
             
             leftPanel.Resize += (s, e) =>
             {
+                solutionDropdown.Width = leftPanel.ClientSize.Width - 16;
                 entityDropdown.Width = leftPanel.ClientSize.Width - 16;
                 viewDropdown.Width = leftPanel.ClientSize.Width - 16;
                 sampleRecordDropdown.Width = leftPanel.ClientSize.Width - 16;
@@ -461,6 +1163,7 @@ namespace NameBuilderConfigurator
                 ReadOnly = true,
                 Font = new Font("Consolas", 9F)
             };
+            helpToolTip.SetToolTip(jsonOutputTextBox, "Read-only view of the generated JSON payload (copy or export via the ribbon).");
             jsonTabPanel.Controls.Add(jsonOutputTextBox);
             
             jsonTab.Controls.Add(jsonTabPanel);
@@ -494,6 +1197,7 @@ namespace NameBuilderConfigurator
                 WordWrap = true
             };
             previewPanel.Resize += (s, e) => previewTextBox.Width = previewPanel.ClientSize.Width - 16;
+            helpToolTip.SetToolTip(previewTextBox, "Live example of the assembled name for the selected sample record.");
             previewPanel.Controls.Add(previewTextBox);
 
             rightTopBottomSplitter.Panel1.Controls.Add(previewPanel);
@@ -510,60 +1214,93 @@ namespace NameBuilderConfigurator
             this.Name = "NameBuilderConfiguratorControl";
             this.MinimumSize = new Size(1000, 600);
 
-            // Ensure initial splitter positions match the default layout
+            // Wire up splitter persistence handlers
+            bool isRestoringLayout = true; // Start as true to block initial layout changes
+            bool allowPersistence = false;
+            
+            leftRightSplitter.SplitterMoved += (s, e) => {
+                if (isRestoringLayout || !allowPersistence) return;
+                var st = PluginUserSettings.Load();
+                var total = this.ClientSize.Width;
+                if (total > 0) st.LeftPanelProportion = (double)leftRightSplitter.SplitterDistance / total;
+                st.Save();
+            };
+            middleRightSplitter.SplitterMoved += (s, e) => {
+                if (isRestoringLayout || !allowPersistence) return;
+                var st = PluginUserSettings.Load();
+                var total = this.ClientSize.Width;
+                if (total > 0)
+                {
+                    var rightPanelActualWidth = Math.Max(0, (total - leftRightSplitter.SplitterDistance) - middleRightSplitter.SplitterDistance);
+                    st.RightPanelProportion = total > 0 ? (double)rightPanelActualWidth / total : st.RightPanelProportion;
+                }
+                st.Save();
+            };
+            rightTopBottomSplitter.SplitterMoved += (s, e) =>
+            {
+                if (isRestoringLayout || !allowPersistence) return;
+                var st = PluginUserSettings.Load();
+                st.PreviewHeight = Math.Max(20, Math.Min(rightTopBottomSplitter.SplitterDistance, 100));
+                st.Save();
+            };
+
+            // Restore saved splitter positions after control is properly sized
+            bool initialLayoutApplied = false;
+            EventHandler applySavedLayout = null;
+            applySavedLayout = (s, e) =>
+            {
+                if (initialLayoutApplied) return;
+                
+                var totalWidth = this.ClientSize.Width;
+                if (totalWidth < 800) return; // Wait for proper sizing
+                
+                initialLayoutApplied = true;
+                isRestoringLayout = true;
+                
+                try
+                {
+                    var settings = PluginUserSettings.Load();
+                    
+                    // Default proportions: Left 22%, Middle 48%, Right 30%
+                    var leftProportion = settings.LeftPanelProportion;
+                    var rightProportion = settings.RightPanelProportion;
+                    
+                    // Calculate left panel width (ensure minimum 250px, maximum 50%)
+                    var leftWidth = (int)(totalWidth * leftProportion);
+                    leftRightSplitter.SplitterDistance = Math.Max(250, Math.Min(leftWidth, (int)(totalWidth * 0.5)));
+                    
+                    // Calculate right panel splits based on proportions
+                    var rightWidth = totalWidth - leftRightSplitter.SplitterDistance;
+                    var rightPanelWidth = (int)(totalWidth * rightProportion);
+                    var middleWidth = rightWidth - Math.Max(300, rightPanelWidth);
+                    middleRightSplitter.SplitterDistance = Math.Max(200, middleWidth);
+                    
+                    // Preview height (persisted)
+                    rightTopBottomSplitter.SplitterDistance = Math.Max(20, Math.Min(settings.PreviewHeight, 100));
+                }
+                finally
+                {
+                    isRestoringLayout = false;
+                    // Delay enabling persistence to let layout fully settle
+                    System.Threading.Tasks.Task.Delay(500).ContinueWith(_ => {
+                        allowPersistence = true;
+                    });
+                }
+            };
+            
             this.Load += (s, e) =>
             {
-                var settings = PluginUserSettings.Load();
-                var totalWidth = mainContainer.ClientSize.Width;
-                
-                // Default proportions: Left 30%, Middle 35%, Right 35%
-                var leftProportion = settings.LeftPanelProportion;
-                var rightProportion = settings.RightPanelProportion;
-                
-                // Calculate left panel width (ensure minimum 280px, maximum 50%)
-                var leftWidth = (int)(totalWidth * leftProportion);
-                leftRightSplitter.SplitterDistance = Math.Max(280, Math.Min(leftWidth, (int)(totalWidth * 0.5)));
-                
-                // Calculate right panel splits based on proportions
-                var rightWidth = totalWidth - leftRightSplitter.SplitterDistance;
-                var rightPanelWidth = (int)(totalWidth * rightProportion);
-                var middleWidth = rightWidth - Math.Max(350, rightPanelWidth);
-                middleRightSplitter.SplitterDistance = Math.Max(100, middleWidth);
-                
-                // Preview height (persisted)
-                rightTopBottomSplitter.SplitterDistance = Math.Max(20, Math.Min(settings.PreviewHeight, 50));
-
-                // Save proportions on splitter moved
-                leftRightSplitter.SplitterMoved += (s2, e2) => {
-                    var st = PluginUserSettings.Load();
-                    var total = mainContainer.ClientSize.Width;
-                    if (total > 0) st.LeftPanelProportion = (double)leftRightSplitter.SplitterDistance / total;
-                    st.Save();
-                };
-                middleRightSplitter.SplitterMoved += (s2, e2) => {
-                    var st = PluginUserSettings.Load();
-                    var total = mainContainer.ClientSize.Width;
-                    if (total > 0)
-                    {
-                        var rightPanelActualWidth = Math.Max(0, (total - leftRightSplitter.SplitterDistance) - middleRightSplitter.SplitterDistance);
-                        st.RightPanelProportion = total > 0 ? (double)rightPanelActualWidth / total : st.RightPanelProportion;
-                    }
-                    st.Save();
-                };
-                rightTopBottomSplitter.SplitterMoved += (s2, e2) =>
-                {
-                    var st = PluginUserSettings.Load();
-                    st.PreviewHeight = Math.Max(20, Math.Min(rightTopBottomSplitter.SplitterDistance, 50));
-                    st.Save();
-                };
+                applySavedLayout(s, e);
                 
                 // Auto-load entities if already connected
                 if (Service != null)
                 {
-                    ExecuteMethod(LoadEntities);
+                    EnsureSolutionsLoaded(ensureEntities: true);
                     EnsureNameBuilderPluginPresence();
                 }
             };
+            
+            this.Resize += applySavedLayout;
 
             UpdatePluginInstallButtonState();
             this.ResumeLayout();
@@ -608,18 +1345,25 @@ namespace NameBuilderConfigurator
                             statusLabel.ForeColor = Color.Firebrick;
                             MessageBox.Show(this, result.Message, "NameBuilder Plug-in Required",
                                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            pendingPostInstallAction = null;
                         }
                         else
                         {
                             pluginPresenceVerified = true;
-                            statusLabel.Text = string.IsNullOrWhiteSpace(result.InstalledVersion)
-                                ? "NameBuilder plug-in registration verified."
-                                : $"NameBuilder plug-in verified (v{result.InstalledVersion}).";
+                            var hashPreview = FormatHashPreview(result.InstalledHash);
+                            statusLabel.Text = $"NameBuilder plug-in registration verified (hash {hashPreview}).";
                             statusLabel.ForeColor = Color.ForestGreen;
 
                             if (result.ResolvedPluginType != null)
                             {
                                 activePluginType = result.ResolvedPluginType;
+                            }
+
+                            if (pendingPostInstallAction != null)
+                            {
+                                var continuation = pendingPostInstallAction;
+                                pendingPostInstallAction = null;
+                                continuation?.Invoke();
                             }
                         }
 
@@ -634,7 +1378,7 @@ namespace NameBuilderConfigurator
         {
             var assemblyQuery = new QueryExpression("pluginassembly")
             {
-                ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "modifiedon"),
+                ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "modifiedon", "content"),
                 Criteria = new FilterExpression
                 {
                     Conditions =
@@ -684,7 +1428,8 @@ namespace NameBuilderConfigurator
                     PluginAssemblyId = assembly.Id,
                     InstalledVersion = assembly.GetAttributeValue<string>("version"),
                     AssemblyName = assembly.GetAttributeValue<string>("name") ?? "NameBuilder",
-                    RegisteredPluginTypes = pluginTypes
+                    RegisteredPluginTypes = pluginTypes,
+                    InstalledHash = ComputeSha256HexFromBase64(assembly.GetAttributeValue<string>("content"))
                 };
             }
 
@@ -696,7 +1441,8 @@ namespace NameBuilderConfigurator
                 PluginAssemblyId = assembly.Id,
                 AssemblyName = assembly.GetAttributeValue<string>("name") ?? "NameBuilder",
                 LastUpdatedOn = assembly.GetAttributeValue<DateTime?>("modifiedon"),
-                RegisteredPluginTypes = pluginTypes
+                RegisteredPluginTypes = pluginTypes,
+                InstalledHash = ComputeSha256HexFromBase64(assembly.GetAttributeValue<string>("content"))
             };
         }
 
@@ -721,7 +1467,7 @@ namespace NameBuilderConfigurator
             }
         }
 
-        private void StartPluginInstallation(string assemblyPath)
+        private void StartPluginInstallation(string assemblyPath, Action postInstallContinuation = null)
         {
             if (string.IsNullOrWhiteSpace(assemblyPath) || !File.Exists(assemblyPath))
             {
@@ -758,15 +1504,15 @@ namespace NameBuilderConfigurator
                     if (args.Result is PluginAssemblyInstallResult installResult)
                     {
                         cachedPluginAssemblyPath = installResult.AssemblyPath;
+                        cachedLocalPluginHash = installResult.AssemblyHash ?? null;
                         var action = installResult.CreatedAssembly ? "installed" : "updated";
-                        var versionSuffix = string.IsNullOrWhiteSpace(installResult.Version)
-                            ? string.Empty
-                            : $" (v{installResult.Version})";
-                        statusLabel.Text = $"NameBuilder plug-in {action}{versionSuffix}.";
+                        var hashPreview = FormatHashPreview(installResult.AssemblyHash);
+                        statusLabel.Text = $"NameBuilder plug-in {action} (hash {hashPreview}).";
                         statusLabel.ForeColor = Color.ForestGreen;
                     }
 
                     pluginPresenceVerified = false;
+                    pendingPostInstallAction = postInstallContinuation;
                     EnsureNameBuilderPluginPresence();
                 }
             });
@@ -778,7 +1524,8 @@ namespace NameBuilderConfigurator
             {
                 IsInstalled = lastPluginCheckResult?.IsInstalled ?? false,
                 InstalledVersion = lastPluginCheckResult?.InstalledVersion,
-                StatusMessage = lastPluginCheckResult?.Message
+                StatusMessage = lastPluginCheckResult?.Message,
+                InstalledHash = lastPluginCheckResult?.InstalledHash
             };
 
             if (lastPluginCheckResult?.RegisteredPluginTypes != null && lastPluginCheckResult.RegisteredPluginTypes.Count > 0)
@@ -807,10 +1554,10 @@ namespace NameBuilderConfigurator
                 : "Register NameBuilder Plug-in";
 
             if (lastPluginCheckResult != null && lastPluginCheckResult.IsInstalled &&
-                !string.IsNullOrWhiteSpace(lastPluginCheckResult.InstalledVersion))
+                !string.IsNullOrWhiteSpace(lastPluginCheckResult.InstalledHash))
             {
                 registerPluginToolButton.ToolTipText =
-                    $"Current Dataverse version: {lastPluginCheckResult.InstalledVersion}. Click to update or repair.";
+                    $"Current NameBuilder hash: {FormatHashPreview(lastPluginCheckResult.InstalledHash)}. Click to update or repair.";
             }
             else
             {
@@ -893,7 +1640,7 @@ namespace NameBuilderConfigurator
             }
 
             SetActiveRegistryStep(null);
-            ExecuteMethod(LoadEntities);
+            EnsureSolutionsLoaded(ensureEntities: true);
         }
 
         private void RetrieveConfigurationToolButton_Click(object sender, EventArgs e)
@@ -1334,13 +2081,17 @@ namespace NameBuilderConfigurator
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Unable to parse the step configuration: {ex.Message}", "Invalid Configuration",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                DiagnosticLog.LogError("Load Configuration from Step", ex);
+                MessageBox.Show(
+                    $"Unable to parse the step configuration.\n\n{ex.Message}\n\n" +
+                    "This may indicate a corrupt or incompatible configuration file. Check the diagnostics log for details.",
+                    "Invalid Configuration", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
             if (config == null)
             {
+                DiagnosticLog.LogWarning("Load Configuration from Step", "Configuration deserialized to null");
                 MessageBox.Show("The selected step did not return a valid configuration payload.", "Invalid Configuration",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
@@ -1397,11 +2148,9 @@ namespace NameBuilderConfigurator
 
             if (targetItem != null)
             {
-                entityDropdown.Enabled = true;
-
-                if (entityDropdown.SelectedItem == targetItem)
+                if (Equals(entityDropdown.SelectedItem, targetItem))
                 {
-                    EntityDropdown_SelectedIndexChanged(entityDropdown, EventArgs.Empty);
+                    HandleEntitySelectionChanged();
                 }
                 else
                 {
@@ -1409,6 +2158,24 @@ namespace NameBuilderConfigurator
                 }
 
                 return;
+            }
+
+            var defaultSolution = solutionDropdown?.Items.Cast<SolutionItem>()
+                .FirstOrDefault(IsDefaultSolution);
+            if (defaultSolution != null && !Equals(solutionDropdown.SelectedItem, defaultSolution))
+            {
+                suppressSolutionSelectionChanged = true;
+                solutionDropdown.SelectedItem = defaultSolution;
+                suppressSolutionSelectionChanged = false;
+                HandleSolutionSelectionChanged();
+
+                targetItem = entityDropdown.Items.Cast<EntityItem>()
+                    .FirstOrDefault(i => i.LogicalName.Equals(entityLogicalName, StringComparison.OrdinalIgnoreCase));
+                if (targetItem != null)
+                {
+                    entityDropdown.SelectedItem = targetItem;
+                    return;
+                }
             }
 
             LoadSingleEntityAndSelect(entityLogicalName);
@@ -1509,7 +2276,7 @@ namespace NameBuilderConfigurator
                 {
                     var attrMeta = allAttributes?.FirstOrDefault(a =>
                         a.LogicalName.Equals(field.Field, StringComparison.OrdinalIgnoreCase));
-                    AddFieldBlock(field, attrMeta, applyDefaults: true);
+                    AddFieldBlock(field, attrMeta, applyDefaults: false);
                 }
             }
 
@@ -1710,50 +2477,50 @@ namespace NameBuilderConfigurator
                     }
 
                     entities = (List<EntityMetadata>)args.Result;
-                    entityDropdown.Items.Clear();
-                    
-                    foreach (var entity in entities)
-                    {
-                        var displayName = entity.DisplayName?.UserLocalizedLabel?.Label ?? entity.LogicalName;
-                        entityDropdown.Items.Add(new EntityItem 
-                        { 
-                            DisplayName = displayName,
-                            LogicalName = entity.LogicalName,
-                            Metadata = entity
-                        });
-                    }
-                    
-                    entityDropdown.Enabled = true;
                     statusLabel.Text = $"Loaded {entities.Count} entities";
                     statusLabel.ForeColor = Color.Green;
+
+                    ApplySolutionFilterIfReady();
                 }
             });
         }
 
         private void EntityDropdown_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (entityDropdown.SelectedItem == null) return;
+            if (suppressEntitySelectionChanged)
+            {
+                return;
+            }
+
+            HandleEntitySelectionChanged();
+        }
+
+        private void HandleEntitySelectionChanged()
+        {
+            if (entityDropdown?.SelectedItem == null)
+            {
+                return;
+            }
 
             var selectedEntity = (EntityItem)entityDropdown.SelectedItem;
             currentEntityLogicalName = selectedEntity.LogicalName;
             currentEntityDisplayName = selectedEntity.DisplayName;
-            
-            // Clear dependent dropdowns
+
+            ClearSampleRecordCache();
+
+            PersistConnectionPreference(pref => pref.LastEntityLogicalName = currentEntityLogicalName);
+
             viewDropdown.Items.Clear();
             viewDropdown.Enabled = false;
             sampleRecordDropdown.Items.Clear();
             sampleRecordDropdown.Enabled = false;
             sampleRecord = null;
-            
-            // Clear existing blocks
+
             fieldsPanel.Controls.Clear();
             fieldBlocks.Clear();
-            
-            // Add entity header block
+
             CreateEntityHeaderBlock(selectedEntity.DisplayName, selectedEntity.LogicalName);
 
-            // Don't select header yet - wait until data is loaded
-            
             ExecuteMethod(() => LoadViewsAndAttributes(selectedEntity.LogicalName));
         }
         
@@ -1956,10 +2723,10 @@ namespace NameBuilderConfigurator
                             View = view
                         });
                     }
-                    
-                    viewDropdown.SelectedIndex = 0;
-                    viewDropdown.Enabled = true;
+
+                    viewDropdown.Enabled = viewDropdown.Items.Count > 0;
                     attributeListBox.Enabled = true;
+                    RestoreViewSelectionFromPreferences();
                     statusLabel.Text = $"Loaded {currentAttributes.Count} attributes, {result.Views.Count} views";
 
                     TryApplyPendingConfiguration();
@@ -1969,30 +2736,41 @@ namespace NameBuilderConfigurator
 
         private void ViewDropdown_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (viewDropdown.SelectedItem == null) return;
-            
+            if (suppressViewSelectionChanged)
+            {
+                return;
+            }
+
+            HandleViewSelectionChanged();
+        }
+
+        private void HandleViewSelectionChanged()
+        {
+            if (viewDropdown?.SelectedItem == null)
+            {
+                return;
+            }
+
             var selectedView = (ViewItem)viewDropdown.SelectedItem;
-            
-            // Clear sample record
+
+            PersistConnectionPreference(pref => pref.LastViewId = selectedView.ViewId);
+
             sampleRecordDropdown.Items.Clear();
             sampleRecordDropdown.Enabled = false;
             sampleRecord = null;
             previewTextBox.Clear();
-            
+
             if (selectedView.ViewId == Guid.Empty)
             {
-                // Show all attributes
                 currentAttributes = allAttributes;
                 ExecuteMethod(() => LoadSampleRecordsForEntity());
             }
             else
             {
-                // Filter attributes based on view columns
                 ExecuteMethod(() => FilterAttributesByView(selectedView.View));
                 return;
             }
-            
-            // Refresh attribute list
+
             RefreshAttributeList();
         }
 
@@ -2150,7 +2928,7 @@ namespace NameBuilderConfigurator
                         records = RetrieveEntitySampleRecords(useStateFilter: false);
                     }
 
-                    args.Result = new { Records = records, PrimaryNameAttribute = currentPrimaryNameAttribute, HasAllAttributes = true };
+                    args.Result = new { Records = records, PrimaryNameAttribute = currentPrimaryNameAttribute, HasAllAttributes = false };
                 },
                 PostWorkCallBack = HandleSampleRecordsLoaded
             });
@@ -2160,7 +2938,7 @@ namespace NameBuilderConfigurator
         {
             var query = new QueryExpression(currentEntityLogicalName)
             {
-                ColumnSet = new ColumnSet(true),
+                ColumnSet = new ColumnSet(GetMinimalSampleColumns().ToArray()),
                 TopCount = 10
             };
 
@@ -2170,6 +2948,87 @@ namespace NameBuilderConfigurator
             }
 
             return Service.RetrieveMultiple(query);
+        }
+
+        private IEnumerable<string> GetMinimalSampleColumns()
+        {
+            var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var field in GetDisplayNameAttributes())
+            {
+                columns.Add(field);
+            }
+
+            foreach (var field in GetRequiredAttributesForPreview())
+            {
+                if (AttributeExists(field))
+                {
+                    columns.Add(field);
+                }
+            }
+
+            if (columns.Count == 0)
+            {
+                columns.Add(GetFallbackAttributeForSampling());
+            }
+
+            return columns;
+        }
+
+        private IEnumerable<string> GetDisplayNameAttributes()
+        {
+            var candidates = new List<string>
+            {
+                currentPrimaryNameAttribute,
+                "name",
+                "fullname",
+                "subject",
+                "title",
+                "description",
+                currentEntityLogicalName + "name"
+            };
+
+            return candidates
+                .Where(c => !string.IsNullOrWhiteSpace(c) && AttributeExists(c))
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private string GetFallbackAttributeForSampling()
+        {
+            var preferred = new[]
+            {
+                currentPrimaryNameAttribute,
+                currentEntityLogicalName + "id",
+                "createdon",
+                "modifiedon"
+            };
+
+            foreach (var candidate in preferred)
+            {
+                if (!string.IsNullOrWhiteSpace(candidate) && AttributeExists(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            var firstExisting = allAttributes?.FirstOrDefault()?.LogicalName;
+            if (!string.IsNullOrWhiteSpace(firstExisting))
+            {
+                return firstExisting;
+            }
+
+            // As a last resort fall back to "name" (may still fail if entity truly has no attributes exposed)
+            return "name";
+        }
+
+        private bool AttributeExists(string logicalName)
+        {
+            if (string.IsNullOrWhiteSpace(logicalName) || allAttributes == null)
+            {
+                return false;
+            }
+
+            return allAttributes.Any(a => logicalName.Equals(a.LogicalName, StringComparison.OrdinalIgnoreCase));
         }
 
         private bool EntitySupportsStateCode()
@@ -2217,11 +3076,12 @@ namespace NameBuilderConfigurator
 
             foreach (var record in records.Entities)
             {
-                var displayValue = GetRecordDisplayName(record);
+                var cachedRecord = CacheSampleRecord(record, recordsHaveAllAttributes);
+                var displayValue = GetRecordDisplayName(cachedRecord);
                 sampleRecordDropdown.Items.Add(new RecordItem
                 {
                     DisplayName = displayValue,
-                    Record = record,
+                    Record = cachedRecord,
                     HasAllAttributes = recordsHaveAllAttributes
                 });
             }
@@ -2254,6 +3114,165 @@ namespace NameBuilderConfigurator
             return record.Id.ToString().Substring(0, 8) + "...";
         }
 
+        private Entity CacheSampleRecord(Entity record, bool hasAllAttributes)
+        {
+            if (record == null || record.Id == Guid.Empty)
+            {
+                return record;
+            }
+
+            var logicalName = string.IsNullOrWhiteSpace(record.LogicalName) ? currentEntityLogicalName : record.LogicalName;
+            var cache = GetRecordCacheForEntity(logicalName);
+
+            if (cache.TryGetValue(record.Id, out var existing))
+            {
+                MergeEntityAttributes(existing, record);
+                return existing;
+            }
+
+            cache[record.Id] = record;
+            return record;
+        }
+
+        private Dictionary<Guid, Entity> GetRecordCacheForEntity(string logicalName)
+        {
+            logicalName = string.IsNullOrWhiteSpace(logicalName) ? currentEntityLogicalName : logicalName;
+            if (!sampleRecordCache.TryGetValue(logicalName, out var cache))
+            {
+                cache = new Dictionary<Guid, Entity>();
+                sampleRecordCache[logicalName] = cache;
+            }
+
+            return cache;
+        }
+
+        private Entity EnsureRecordHasAttributes(Entity record, IEnumerable<string> requiredAttributes)
+        {
+            if (record == null)
+            {
+                return record;
+            }
+
+            var logicalName = string.IsNullOrWhiteSpace(record.LogicalName) ? currentEntityLogicalName : record.LogicalName;
+            var cache = GetRecordCacheForEntity(logicalName);
+
+            if (cache.TryGetValue(record.Id, out var cached))
+            {
+                record = cached;
+            }
+            else if (record.Id != Guid.Empty)
+            {
+                cache[record.Id] = record;
+            }
+
+            if (record.Id == Guid.Empty || Service == null)
+            {
+                return record;
+            }
+
+            var required = (requiredAttributes ?? Enumerable.Empty<string>())
+                .Where(r => !string.IsNullOrWhiteSpace(r))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (required.Count == 0)
+            {
+                return record;
+            }
+
+            var missing = required.Where(r => !record.Contains(r)).ToList();
+            if (missing.Count == 0)
+            {
+                return record;
+            }
+
+            var refreshed = Service.Retrieve(logicalName, record.Id, new ColumnSet(missing.ToArray()));
+            MergeEntityAttributes(record, refreshed);
+            return record;
+        }
+
+        private void MergeEntityAttributes(Entity target, Entity source)
+        {
+            if (target == null || source == null)
+            {
+                return;
+            }
+
+            foreach (var kvp in source.Attributes)
+            {
+                target[kvp.Key] = kvp.Value;
+            }
+
+            if (source.FormattedValues != null)
+            {
+                foreach (var kvp in source.FormattedValues)
+                {
+                    target.FormattedValues[kvp.Key] = kvp.Value;
+                }
+            }
+        }
+
+        private IEnumerable<string> GetRequiredAttributesForPreview()
+        {
+            var required = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var block in fieldBlocks)
+            {
+                AddFieldAttributes(block.Configuration, required);
+            }
+
+            return required;
+        }
+
+        private void AddFieldAttributes(FieldConfiguration config, HashSet<string> required)
+        {
+            if (config == null || required == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(config.Field))
+            {
+                required.Add(config.Field);
+            }
+
+            if (config.AlternateField != null)
+            {
+                AddFieldAttributes(config.AlternateField, required);
+            }
+
+            AddConditionAttributes(config.IncludeIf, required);
+        }
+
+        private void AddConditionAttributes(FieldCondition condition, HashSet<string> required)
+        {
+            if (condition == null || required == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(condition.Field))
+            {
+                required.Add(condition.Field);
+            }
+
+            if (condition.AnyOf != null)
+            {
+                foreach (var child in condition.AnyOf)
+                {
+                    AddConditionAttributes(child, required);
+                }
+            }
+
+            if (condition.AllOf != null)
+            {
+                foreach (var child in condition.AllOf)
+                {
+                    AddConditionAttributes(child, required);
+                }
+            }
+        }
+
         private void SampleRecordDropdown_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (sampleRecordDropdown.SelectedItem == null || !(sampleRecordDropdown.SelectedItem is RecordItem))
@@ -2264,64 +3283,11 @@ namespace NameBuilderConfigurator
             }
             
             var selectedRecord = (RecordItem)sampleRecordDropdown.SelectedItem;
-            if (selectedRecord.HasAllAttributes)
-            {
-                sampleRecord = selectedRecord.Record;
-                GeneratePreview();
-                return;
-            }
-
-            var recordToRetrieve = selectedRecord.Record;
-            if (recordToRetrieve == null || recordToRetrieve.Id == Guid.Empty)
-            {
-                sampleRecord = recordToRetrieve;
-                GeneratePreview();
-                return;
-            }
-
-            WorkAsync(new WorkAsyncInfo
-            {
-                Message = "Retrieving record details...",
-                AsyncArgument = selectedRecord,
-                Work = (worker, args) =>
-                {
-                    var item = (RecordItem)args.Argument;
-                    var logicalName = item.Record?.LogicalName ?? currentEntityLogicalName;
-                    if (string.IsNullOrWhiteSpace(logicalName))
-                    {
-                        args.Result = item.Record;
-                        return;
-                    }
-
-                    var fullRecord = Service.Retrieve(logicalName, item.Record.Id, new ColumnSet(true));
-                    args.Result = fullRecord;
-                },
-                PostWorkCallBack = (args) =>
-                {
-                    if (args.Error != null)
-                    {
-                        MessageBox.Show($"Error retrieving record details: {args.Error.Message}", "Sample Record",
-                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        sampleRecord = selectedRecord.Record;
-                        GeneratePreview();
-                        return;
-                    }
-
-                    var fullRecord = args.Result as Entity;
-                    if (fullRecord != null)
-                    {
-                        selectedRecord.Record = fullRecord;
-                        selectedRecord.HasAllAttributes = true;
-                        sampleRecord = fullRecord;
-                    }
-                    else
-                    {
-                        sampleRecord = selectedRecord.Record;
-                    }
-
-                    GeneratePreview();
-                }
-            });
+            var requiredAttributes = GetRequiredAttributesForPreview();
+            sampleRecord = EnsureRecordHasAttributes(selectedRecord.Record, requiredAttributes);
+            selectedRecord.Record = sampleRecord;
+            selectedRecord.HasAllAttributes = requiredAttributes.All(attr => sampleRecord != null && sampleRecord.Contains(attr));
+            GeneratePreview();
         }
 
         private void AttributeListBox_DoubleClick(object sender, EventArgs e)
@@ -2579,6 +3545,7 @@ namespace NameBuilderConfigurator
                 Location = new Point(10, y + 20),
                 Size = new Size(250, 23)
             };
+            helpToolTip?.SetToolTip(targetTextBox, "Logical name of the destination column (defaults to name). This becomes targetField in JSON.");
             targetTextBox.TextChanged += (s, e) => {
                 targetFieldTextBox.Text = targetTextBox.Text;
                 GenerateJsonAndPreview();
@@ -2602,6 +3569,7 @@ namespace NameBuilderConfigurator
                 Maximum = 100000,
                 Value = maxLengthNumeric.Value
             };
+            helpToolTip?.SetToolTip(maxNumeric, "Optional length cap applied to the final string. Set to 0 for unlimited.");
             maxNumeric.ValueChanged += (s, e) => {
                 maxLengthNumeric.Value = maxNumeric.Value;
                 GenerateJsonAndPreview();
@@ -2617,6 +3585,7 @@ namespace NameBuilderConfigurator
                 Location = new Point(10, y),
                 AutoSize = true
             };
+            helpToolTip?.SetToolTip(traceCheckBox, "When enabled, the NameBuilder plug-in writes verbose traces to the Dataverse Plug-in Trace Log.");
             traceCheckBox.CheckedChanged += (s, e) => {
                 enableTracingCheckBox.Checked = traceCheckBox.Checked;
                 GenerateJsonAndPreview();
@@ -2673,6 +3642,7 @@ namespace NameBuilderConfigurator
                 Location = new Point(85, y + 5),
                 Size = new Size(120, 23)
             };
+            helpToolTip?.SetToolTip(defaultPrefixTextBox, "Default prefix applied to new string fields and any fields still using the previous default.");
             var prefixPreview = MakeSpacesVisible(defaultPrefixTextBox, 210, y + 8);
             propertiesPanel.Controls.Add(prefixPreview);
             defaultPrefixTextBox.TextChanged += (s, e) => {
@@ -2699,6 +3669,7 @@ namespace NameBuilderConfigurator
                 Location = new Point(85, y + 5),
                 Size = new Size(120, 23)
             };
+            helpToolTip?.SetToolTip(defaultSuffixTextBox, "Default suffix applied to new string fields and propagated when unchanged.");
             var suffixPreview = MakeSpacesVisible(defaultSuffixTextBox, 210, y + 8);
             propertiesPanel.Controls.Add(suffixPreview);
             defaultSuffixTextBox.TextChanged += (s, e) => {
@@ -2725,6 +3696,7 @@ namespace NameBuilderConfigurator
                 Size = new Size(200, 23),
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
+            helpToolTip?.SetToolTip(defaultTzCombo, "Timezone offset (in hours) applied to new date/datetime fields when no override exists.");
             var tzOptions = GetTimezoneOptions();
             defaultTzCombo.Items.Add("(None)");
             defaultTzCombo.Items.AddRange(tzOptions.Select(o => o.Label).ToArray());
@@ -2773,6 +3745,7 @@ namespace NameBuilderConfigurator
                 Location = new Point(85, y + 5),
                 Size = new Size(200, 23)
             };
+            helpToolTip?.SetToolTip(defaultNumberFormatTextBox, "Standard .NET numeric format string used for new number/currency blocks.");
             defaultNumberFormatTextBox.TextChanged += (s, e) => {
                 var oldValue = settings.DefaultNumberFormat;
                 settings.DefaultNumberFormat = string.IsNullOrWhiteSpace(defaultNumberFormatTextBox.Text) ? null : defaultNumberFormatTextBox.Text;
@@ -2805,6 +3778,7 @@ namespace NameBuilderConfigurator
                 Location = new Point(85, y + 5),
                 Size = new Size(200, 23)
             };
+            helpToolTip?.SetToolTip(defaultDateFormatTextBox, "Date or datetime format string applied to new temporal blocks.");
             defaultDateFormatTextBox.TextChanged += (s, e) => {
                 var oldValue = settings.DefaultDateFormat;
                 settings.DefaultDateFormat = string.IsNullOrWhiteSpace(defaultDateFormatTextBox.Text) ? null : defaultDateFormatTextBox.Text;
@@ -2850,16 +3824,18 @@ namespace NameBuilderConfigurator
             }
             
             int y = friendlyNameLabel != null ? friendlyNameLabel.Bottom + 20 : 50;
-            int labelWidth = 120;
-            int controlX = labelWidth + 10;
+            int labelWidth = 110;
+            int controlX = labelWidth + 8;
+            int contentWidth = Math.Max(220, propertiesPanel.ClientSize.Width - controlX - 20);
             
             // Field Type
             AddPropertyLabel("Field Type:", 10, y);
             var typeCombo = new ComboBox
             {
                 Location = new Point(controlX, y),
-                Size = new Size(200, 23),
-                DropDownStyle = ComboBoxStyle.DropDownList
+                Size = new Size(contentWidth, 23),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             typeCombo.Items.AddRange(new[] { "auto-detect", "string", "lookup", "date", "datetime", "optionset", "number", "currency", "boolean" });
             typeCombo.SelectedItem = block.Configuration.Type ?? "auto-detect";
@@ -2884,8 +3860,9 @@ namespace NameBuilderConfigurator
                 var tzCombo = new ComboBox
                 {
                     Location = new Point(controlX, y),
-                    Size = new Size(220, 23),
-                    DropDownStyle = ComboBoxStyle.DropDownList
+                    Size = new Size(contentWidth, 23),
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
                 var tzOptions = GetTimezoneOptions();
                 tzCombo.Items.AddRange(tzOptions.Select(o => o.Label).ToArray());
@@ -2919,7 +3896,8 @@ namespace NameBuilderConfigurator
                 {
                     Text = block.Configuration.Format ?? "",
                     Location = new Point(controlX, y),
-                    Size = new Size(200, 23)
+                    Size = new Size(contentWidth, 23),
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
                 };
                 formatTextBox.TextChanged += (s, e) => {
                     block.Configuration.Format = string.IsNullOrWhiteSpace(formatTextBox.Text) ? null : formatTextBox.Text;
@@ -2933,9 +3911,11 @@ namespace NameBuilderConfigurator
                 {
                     Text = "Date: yyyy-MM-dd | Number: #,##0.00 | Scale: 0.0K, 0.00M",
                     Location = new Point(controlX, y),
-                    Size = new Size(240, 30),
+                    Size = new Size(contentWidth, 30),
                     ForeColor = Color.Gray,
-                    Font = new Font("Segoe UI", 7.5F)
+                    Font = new Font("Segoe UI", 7.5F),
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                    AutoSize = false
                 };
                 propertiesPanel.Controls.Add(formatHintLabel);
                 y += 40;
@@ -3026,41 +4006,33 @@ namespace NameBuilderConfigurator
                 y += 35;
             }
             
-            // Default Value (for all types)
-            AddPropertyLabel("Default Value:", 10, y);
-            var defaultTextBox = new TextBox
+            var attributeSource = allAttributes ?? currentAttributes ?? new List<AttributeMetadata>();
+
+            // Default / Alternate Button
+            var fallbackButton = new Button
             {
-                Text = block.Configuration.Default ?? "",
-                Location = new Point(controlX, y),
-                Size = new Size(200, 23)
-            };
-            defaultTextBox.TextChanged += (s, e) => {
-                block.Configuration.Default = string.IsNullOrWhiteSpace(defaultTextBox.Text) ? null : defaultTextBox.Text;
-                GenerateJsonAndPreview();
-            };
-            propertiesPanel.Controls.Add(defaultTextBox);
-            y += 35;
-            
-            // Alternate Field Button
-            var alternateButton = new Button
-            {
-                Text = block.Configuration.AlternateField != null ? "Edit Alternate Field" : "Add Alternate Field",
+                Text = (block.Configuration.AlternateField != null || !string.IsNullOrWhiteSpace(block.Configuration.Default))
+                    ? "Edit default if blank"
+                    : "Default if blank",
                 Location = new Point(10, y),
                 Size = new Size(200, 30)
             };
-            alternateButton.Click += (s, e) => {
-                using (var dialog = new AlternateFieldDialog(block.Configuration.AlternateField))
+            helpToolTip.SetToolTip(fallbackButton, "Define alternate attributes or literal text to use whenever the primary field is empty.");
+            fallbackButton.Click += (s, e) => {
+                var existingAlternate = block.Configuration.AlternateField ?? new FieldConfiguration();
+                using (var dialog = new AlternateFieldDialog(existingAlternate, block.Configuration.Default, attributeSource))
                 {
                     if (dialog.ShowDialog() == DialogResult.OK)
                     {
                         block.Configuration.AlternateField = dialog.Result;
-                        alternateButton.Text = block.Configuration.AlternateField != null ? "Edit Alternate Field" : "Add Alternate Field";
+                        block.Configuration.Default = dialog.DefaultValue;
                         block.UpdateDisplay();
                         GenerateJsonAndPreview();
+                        ShowBlockProperties(block);
                     }
                 }
             };
-            propertiesPanel.Controls.Add(alternateButton);
+            propertiesPanel.Controls.Add(fallbackButton);
             y += 40;
             
             // Condition Button
@@ -3070,8 +4042,8 @@ namespace NameBuilderConfigurator
                 Location = new Point(10, y),
                 Size = new Size(200, 30)
             };
+            helpToolTip.SetToolTip(conditionButton, "Add includeIf logic so this block only renders when the comparison rules are met.");
             conditionButton.Click += (s, e) => {
-                var attributeSource = allAttributes ?? currentAttributes ?? new List<AttributeMetadata>();
                 using (var dialog = new ConditionDialog(block.Configuration.IncludeIf, attributeSource, block.Configuration.Field))
                 {
                     if (dialog.ShowDialog() == DialogResult.OK)
@@ -3080,10 +4052,36 @@ namespace NameBuilderConfigurator
                         conditionButton.Text = block.Configuration.IncludeIf != null ? "Edit Condition (includeIf)" : "Add Condition (includeIf)";
                         block.UpdateDisplay();
                         GenerateJsonAndPreview();
+                        ShowBlockProperties(block);
                     }
                 }
             };
             propertiesPanel.Controls.Add(conditionButton);
+            y += 45;
+
+            var summaryContainer = new Panel
+            {
+                Location = new Point(10, y),
+                Size = new Size(propertiesPanel.ClientSize.Width - 20, Math.Max(120, propertiesPanel.ClientSize.Height - y - 20)),
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = SystemColors.Window,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+            };
+
+            var summaryBox = new TextBox
+            {
+                Multiline = true,
+                ReadOnly = true,
+                BorderStyle = BorderStyle.None,
+                Dock = DockStyle.Fill,
+                BackColor = summaryContainer.BackColor,
+                ForeColor = Color.Black,
+                ScrollBars = ScrollBars.Vertical,
+                Text = BuildFieldBehaviorSummary(block.Configuration)
+            };
+            summaryContainer.Controls.Add(summaryBox);
+            propertiesPanel.Controls.Add(summaryContainer);
+            y += summaryContainer.Height + 10;
             
             propertiesPanel.ResumeLayout();
         }
@@ -3098,6 +4096,119 @@ namespace NameBuilderConfigurator
                 Font = new Font("Segoe UI", 8.5F)
             };
             propertiesPanel.Controls.Add(label);
+        }
+
+        private string BuildFieldBehaviorSummary(FieldConfiguration config)
+        {
+            if (config == null)
+            {
+                return "No field selected.";
+            }
+
+            var lines = new List<string>();
+            var primaryLabel = string.IsNullOrWhiteSpace(config.Field) ? "Primary field" : config.Field;
+            lines.Add($"{primaryLabel} outputs when it has data.");
+
+            AppendFallbackSummary(config, lines);
+
+            var conditionText = DescribeCondition(config.IncludeIf);
+            if (!string.IsNullOrWhiteSpace(conditionText))
+            {
+                lines.Add("Condition: " + conditionText);
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        private void AppendFallbackSummary(FieldConfiguration config, List<string> lines)
+        {
+            if (config == null || lines == null)
+            {
+                return;
+            }
+
+            var visited = new HashSet<FieldConfiguration>();
+            var cursor = config;
+
+            while (cursor != null && visited.Add(cursor))
+            {
+                var alternate = cursor.AlternateField;
+
+                if (alternate != null && !string.IsNullOrWhiteSpace(alternate.Field))
+                {
+                    lines.Add($"If blank -> use {alternate.Field}.");
+                    cursor = alternate;
+                    continue;
+                }
+
+                if (alternate != null && string.IsNullOrWhiteSpace(alternate.Field) &&
+                    !string.IsNullOrWhiteSpace(alternate.Default))
+                {
+                    lines.Add($"If blank -> default to \"{alternate.Default}\".");
+                    break;
+                }
+
+                if (!string.IsNullOrWhiteSpace(cursor.Default))
+                {
+                    lines.Add($"If blank -> default to \"{cursor.Default}\".");
+                }
+                else
+                {
+                    lines.Add("If blank -> leave empty.");
+                }
+                break;
+            }
+
+            if (config.AlternateField != null && !string.IsNullOrWhiteSpace(config.Default))
+            {
+                lines.Add($"Additional default detected -> \"{config.Default}\".");
+            }
+        }
+
+        private string DescribeCondition(FieldCondition condition)
+        {
+            if (condition == null)
+            {
+                return null;
+            }
+
+            var segments = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(condition.Field) && !string.IsNullOrWhiteSpace(condition.Operator))
+            {
+                var comparison = condition.Operator;
+                if (!string.IsNullOrWhiteSpace(condition.Value))
+                {
+                    comparison += " \"" + condition.Value + "\"";
+                }
+                segments.Add($"{condition.Field} {comparison}".Trim());
+            }
+
+            if (condition.AllOf != null && condition.AllOf.Count > 0)
+            {
+                var allSegments = condition.AllOf
+                    .Select(DescribeCondition)
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .ToList();
+                if (allSegments.Count > 0)
+                {
+                    segments.Add("all of (" + string.Join("; ", allSegments) + ")");
+                }
+            }
+
+            if (condition.AnyOf != null && condition.AnyOf.Count > 0)
+            {
+                var anySegments = condition.AnyOf
+                    .Select(DescribeCondition)
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .ToList();
+                if (anySegments.Count > 0)
+                {
+                    segments.Add("any of (" + string.Join("; ", anySegments) + ")");
+                }
+            }
+
+            return segments.Count == 0 ? null : string.Join("; ", segments);
         }
 
         private string ResolveFriendlyAttributeName(FieldBlockControl block)
@@ -4111,6 +5222,81 @@ namespace NameBuilderConfigurator
             fieldsPanel.PerformLayout();
         }
 
+        private string ComputeLocalPluginAssemblyHash(bool refresh = false)
+        {
+            if (!refresh && !string.IsNullOrWhiteSpace(cachedLocalPluginHash))
+            {
+                return cachedLocalPluginHash;
+            }
+
+            var path = ResolveLocalPluginAssemblyPath(refresh);
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                cachedLocalPluginHash = null;
+                return null;
+            }
+
+            try
+            {
+                var bytes = File.ReadAllBytes(path);
+                cachedLocalPluginHash = ComputeSha256Hex(bytes);
+            }
+            catch
+            {
+                cachedLocalPluginHash = null;
+            }
+
+            return cachedLocalPluginHash;
+        }
+
+        private static string ComputeSha256Hex(byte[] data)
+        {
+            if (data == null || data.Length == 0)
+            {
+                return null;
+            }
+
+            using (var sha = SHA256.Create())
+            {
+                var hash = sha.ComputeHash(data);
+                var sb = new StringBuilder(hash.Length * 2);
+                foreach (var b in hash)
+                {
+                    sb.Append(b.ToString("x2"));
+                }
+                return sb.ToString();
+            }
+        }
+
+        private static string ComputeSha256HexFromBase64(string base64Content)
+        {
+            if (string.IsNullOrWhiteSpace(base64Content))
+            {
+                return null;
+            }
+
+            try
+            {
+                var bytes = Convert.FromBase64String(base64Content);
+                return ComputeSha256Hex(bytes);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string FormatHashPreview(string hash)
+        {
+            if (string.IsNullOrWhiteSpace(hash))
+            {
+                return "unknown";
+            }
+
+            var normalized = hash.Trim();
+            return normalized.Length <= 12 ? normalized : normalized.Substring(0, 12) + "…";
+        }
+
         private void GenerateJsonAndPreview()
         {
             GenerateJson();
@@ -4157,6 +5343,9 @@ namespace NameBuilderConfigurator
                 previewTextBox.BackColor = Color.LightGray;
                 return;
             }
+
+            var requiredAttributes = GetRequiredAttributesForPreview();
+            sampleRecord = EnsureRecordHasAttributes(sampleRecord, requiredAttributes);
 
             try
             {
@@ -4267,14 +5456,22 @@ namespace NameBuilderConfigurator
                 case "notcontains":
                     return !MatchesAnyString(context, comparisonValue, (candidate, target) =>
                         candidate.IndexOf(target, StringComparison.OrdinalIgnoreCase) >= 0);
+                case "in":
+                    return MatchesInList(context, comparisonValue, negate: false);
+                case "notin":
+                    return MatchesInList(context, comparisonValue, negate: true);
                 case "isempty":
                     return !context.HasValue || context.Candidates.All(string.IsNullOrWhiteSpace);
                 case "isnotempty":
                     return context.HasValue && context.Candidates.Any(value => !string.IsNullOrWhiteSpace(value));
                 case "greaterthan":
-                    return CompareOrdered(context, comparisonValue, greaterThan: true);
+                    return CompareOrdered(context, comparisonValue, OrderedComparison.GreaterThan);
                 case "lessthan":
-                    return CompareOrdered(context, comparisonValue, greaterThan: false);
+                    return CompareOrdered(context, comparisonValue, OrderedComparison.LessThan);
+                case "greaterthanorequal":
+                    return CompareOrdered(context, comparisonValue, OrderedComparison.GreaterThanOrEqual);
+                case "lessthanorequal":
+                    return CompareOrdered(context, comparisonValue, OrderedComparison.LessThanOrEqual);
                 default:
                     return true;
             }
@@ -4286,6 +5483,14 @@ namespace NameBuilderConfigurator
             public decimal? NumericValue { get; set; }
             public DateTime? DateValue { get; set; }
             public List<string> Candidates { get; } = new List<string>();
+        }
+
+        private enum OrderedComparison
+        {
+            GreaterThan,
+            GreaterThanOrEqual,
+            LessThan,
+            LessThanOrEqual
         }
 
         private ConditionValueContext GetConditionValueContext(Entity record, string fieldName)
@@ -4393,7 +5598,7 @@ namespace NameBuilderConfigurator
             return false;
         }
 
-        private bool CompareOrdered(ConditionValueContext context, string comparisonValue, bool greaterThan)
+        private bool CompareOrdered(ConditionValueContext context, string comparisonValue, OrderedComparison comparison)
         {
             if (context == null)
             {
@@ -4402,18 +5607,93 @@ namespace NameBuilderConfigurator
 
             if (context.NumericValue.HasValue && TryParseDecimal(comparisonValue, out var numericTarget))
             {
-                return greaterThan ? context.NumericValue.Value > numericTarget : context.NumericValue.Value < numericTarget;
+                return CompareNumbers(context.NumericValue.Value, numericTarget, comparison);
             }
 
             if (context.DateValue.HasValue && TryParseDateTime(comparisonValue, out var dateTarget))
             {
-                return greaterThan ? context.DateValue.Value > dateTarget : context.DateValue.Value < dateTarget;
+                return CompareDates(context.DateValue.Value, dateTarget, comparison);
             }
 
             var candidate = context.Candidates.FirstOrDefault() ?? string.Empty;
             var target = comparisonValue ?? string.Empty;
-            var comparison = string.Compare(candidate, target, StringComparison.OrdinalIgnoreCase);
-            return greaterThan ? comparison > 0 : comparison < 0;
+            var comparisonResult = string.Compare(candidate, target, StringComparison.OrdinalIgnoreCase);
+            return CompareIntegers(comparisonResult, comparisonType: comparison);
+        }
+
+        private bool MatchesInList(ConditionValueContext context, string comparisonValue, bool negate)
+        {
+            if (context == null)
+            {
+                return false;
+            }
+
+            var values = (comparisonValue ?? string.Empty)
+                .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(v => v.Trim())
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .ToList();
+
+            if (values.Count == 0)
+            {
+                return false;
+            }
+
+            var match = MatchesAnyString(context, null, (candidate, _) =>
+                values.Any(v => string.Equals(candidate, v, StringComparison.OrdinalIgnoreCase)));
+
+            return negate ? !match : match;
+        }
+
+        private bool CompareNumbers(decimal candidate, decimal target, OrderedComparison comparison)
+        {
+            switch (comparison)
+            {
+                case OrderedComparison.GreaterThan:
+                    return candidate > target;
+                case OrderedComparison.GreaterThanOrEqual:
+                    return candidate >= target;
+                case OrderedComparison.LessThan:
+                    return candidate < target;
+                case OrderedComparison.LessThanOrEqual:
+                    return candidate <= target;
+                default:
+                    return false;
+            }
+        }
+
+        private bool CompareDates(DateTime candidate, DateTime target, OrderedComparison comparison)
+        {
+            switch (comparison)
+            {
+                case OrderedComparison.GreaterThan:
+                    return candidate > target;
+                case OrderedComparison.GreaterThanOrEqual:
+                    return candidate >= target;
+                case OrderedComparison.LessThan:
+                    return candidate < target;
+                case OrderedComparison.LessThanOrEqual:
+                    return candidate <= target;
+                default:
+                    return false;
+            }
+        }
+
+        private bool CompareIntegers(int compareResult, OrderedComparison comparisonType)
+        {
+            switch (comparisonType)
+            {
+                case OrderedComparison.GreaterThan:
+                    return compareResult > 0;
+                case OrderedComparison.GreaterThanOrEqual:
+                    return compareResult >= 0;
+                case OrderedComparison.LessThan:
+                    return compareResult < 0;
+                case OrderedComparison.LessThanOrEqual:
+                    return compareResult <= 0;
+                default:
+                    return false;
+            }
         }
 
         private bool TryConvertToDecimal(object value, out decimal numericValue)
@@ -4798,6 +6078,22 @@ namespace NameBuilderConfigurator
             }
         }
 
+        private class SolutionItem
+        {
+            public Guid SolutionId { get; set; }
+            public string FriendlyName { get; set; }
+            public string UniqueName { get; set; }
+            public bool IsManaged { get; set; }
+
+            public override string ToString() => string.IsNullOrWhiteSpace(FriendlyName) ? UniqueName : FriendlyName;
+        }
+
+        private class SolutionComponentLoadResult
+        {
+            public Guid SolutionId { get; set; }
+            public HashSet<Guid> EntityMetadataIds { get; set; } = new HashSet<Guid>();
+        }
+
         private class ScaleFormatInfo
         {
             public decimal Divisor { get; set; }
@@ -4869,6 +6165,7 @@ namespace NameBuilderConfigurator
             public string AssemblyName { get; set; }
             public DateTime? LastUpdatedOn { get; set; }
             public List<PluginTypeInfo> RegisteredPluginTypes { get; set; } = new List<PluginTypeInfo>();
+            public string InstalledHash { get; set; }
         }
     }
 }
@@ -4884,6 +6181,7 @@ class PluginUserSettings
     public string DefaultSuffix { get; set; } = null;
     public string DefaultNumberFormat { get; set; } = null;
     public string DefaultDateFormat { get; set; } = null;
+    public Dictionary<string, ConnectionPreference> ConnectionPreferences { get; set; } = new Dictionary<string, ConnectionPreference>(StringComparer.OrdinalIgnoreCase);
 
     private static string SettingsPath => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NameBuilderConfigurator", "settings.json");
     private static PluginUserSettings cachedInstance;
@@ -4925,6 +6223,8 @@ class PluginUserSettings
                 cachedInstance = CreateFirstRunDefaults();
             }
 
+            cachedInstance.ConnectionPreferences = NormalizePreferences(cachedInstance.ConnectionPreferences);
+
             return cachedInstance;
         }
     }
@@ -4956,9 +6256,57 @@ class PluginUserSettings
             DefaultSuffix = " | ",
             DefaultTimezoneOffset = 0,
             DefaultNumberFormat = "#,###.0",
-            DefaultDateFormat = "yyyy.MM.dd"
+            DefaultDateFormat = "yyyy.MM.dd",
+            ConnectionPreferences = new Dictionary<string, ConnectionPreference>(StringComparer.OrdinalIgnoreCase)
         };
     }
+
+    private static Dictionary<string, ConnectionPreference> NormalizePreferences(Dictionary<string, ConnectionPreference> source)
+    {
+        return source == null
+            ? new Dictionary<string, ConnectionPreference>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, ConnectionPreference>(source, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public ConnectionPreference GetConnectionPreference(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key) || ConnectionPreferences == null)
+        {
+            return null;
+        }
+
+        ConnectionPreferences.TryGetValue(key, out var preference);
+        return preference;
+    }
+
+    public ConnectionPreference GetOrCreateConnectionPreference(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return null;
+        }
+
+        if (ConnectionPreferences == null)
+        {
+            ConnectionPreferences = new Dictionary<string, ConnectionPreference>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (!ConnectionPreferences.TryGetValue(key, out var preference) || preference == null)
+        {
+            preference = new ConnectionPreference();
+            ConnectionPreferences[key] = preference;
+        }
+
+        return preference;
+    }
+}
+
+class ConnectionPreference
+{
+    public Guid? LastSolutionId { get; set; }
+    public string LastSolutionUniqueName { get; set; }
+    public string LastEntityLogicalName { get; set; }
+    public Guid? LastViewId { get; set; }
 }
 
 

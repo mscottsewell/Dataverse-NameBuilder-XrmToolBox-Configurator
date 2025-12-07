@@ -31,6 +31,7 @@ namespace  NameBuilderConfigurator
         private Button okButton;
         private Button cancelButton;
         private Button removeButton;
+        private readonly ToolTip helpToolTip;
         
         public FieldCondition Result { get; private set; }
         
@@ -50,6 +51,15 @@ namespace  NameBuilderConfigurator
         {
             availableAttributes = attributes?.ToList() ?? new List<AttributeMetadata>();
             defaultFieldLogicalName = defaultField;
+            
+            helpToolTip = new ToolTip
+            {
+                AutoPopDelay = 12000,
+                InitialDelay = 300,
+                ReshowDelay = 100,
+                ShowAlways = true
+            };
+            
             InitializeComponent();
             PopulateFieldDropdown(null);
             LoadCondition(condition);
@@ -58,13 +68,14 @@ namespace  NameBuilderConfigurator
         private void InitializeComponent()
         {
             this.Text = "Field Condition (includeIf)";
-            this.Size = new Size(550, 500);
+            this.Size = new Size(550, 420);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
             this.StartPosition = FormStartPosition.CenterParent;
             
             int y = 20;
+            int panelHeight = 165;
             
             // Simple vs Compound
             simpleRadio = new RadioButton
@@ -75,6 +86,7 @@ namespace  NameBuilderConfigurator
                 Checked = true
             };
             simpleRadio.CheckedChanged += (s, e) => UpdatePanelVisibility();
+            helpToolTip.SetToolTip(simpleRadio, "Single comparison: field [operator] value. Example: statuscode equals 1.");
             
             compoundRadio = new RadioButton
             {
@@ -83,6 +95,7 @@ namespace  NameBuilderConfigurator
                 Size = new Size(300, 25)
             };
             compoundRadio.CheckedChanged += (s, e) => UpdatePanelVisibility();
+            helpToolTip.SetToolTip(compoundRadio, "Multiple conditions combined with AND/OR logic. Example: (status equals 'active' OR type equals 'primary').");
             
             this.Controls.Add(simpleRadio);
             this.Controls.Add(compoundRadio);
@@ -92,7 +105,7 @@ namespace  NameBuilderConfigurator
             simplePanel = new Panel
             {
                 Location = new Point(20, y),
-                Size = new Size(500, 200),
+                Size = new Size(500, panelHeight),
                 BorderStyle = BorderStyle.FixedSingle
             };
             
@@ -113,6 +126,7 @@ namespace  NameBuilderConfigurator
             };
             conditionFieldComboBox.SelectedIndexChanged += ConditionFieldComboBox_SelectedIndexChanged;
             conditionFieldComboBox.Leave += ConditionFieldComboBox_Leave;
+            helpToolTip.SetToolTip(conditionFieldComboBox, "Field to compare. Choose from available attributes or type a logical name manually.");
             simplePanel.Controls.Add(fieldLabel);
             simplePanel.Controls.Add(conditionFieldComboBox);
             py += 35;
@@ -131,6 +145,7 @@ namespace  NameBuilderConfigurator
             };
             operatorComboBox.Items.AddRange(Operators.Cast<object>().ToArray());
             operatorComboBox.SelectedIndexChanged += OperatorComboBox_SelectedIndexChanged;
+            helpToolTip.SetToolTip(operatorComboBox, "Comparison operator: equals, contains, startsWith, isNull (empty), isEmpty, greaterThan, etc.");
             simplePanel.Controls.Add(operatorLabel);
             simplePanel.Controls.Add(operatorComboBox);
             py += 35;
@@ -175,7 +190,7 @@ namespace  NameBuilderConfigurator
             compoundPanel = new Panel
             {
                 Location = new Point(20, y),
-                Size = new Size(500, 200),
+                Size = new Size(500, panelHeight),
                 BorderStyle = BorderStyle.FixedSingle,
                 Visible = false
             };
@@ -212,7 +227,7 @@ namespace  NameBuilderConfigurator
             compoundTextBox = new TextBox
             {
                 Location = new Point(15, py),
-                Size = new Size(465, 80),
+                Size = new Size(465, 60),
                 Multiline = true,
                 ScrollBars = ScrollBars.Vertical,
                 Font = new Font("Consolas", 9F)
@@ -220,7 +235,7 @@ namespace  NameBuilderConfigurator
             compoundPanel.Controls.Add(compoundTextBox);
             
             this.Controls.Add(compoundPanel);
-            y += 210;
+            y += panelHeight + 20;
             
             // Info
             var infoLabel = new Label

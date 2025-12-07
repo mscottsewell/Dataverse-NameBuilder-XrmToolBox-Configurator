@@ -141,8 +141,8 @@ namespace NameBuilderConfigurator
 
             var lines = new List<string>();
             if (statusInfo.IsInstalled)
-                {
-                    lines.Add($"Current NameBuilder version: {statusInfo.InstalledVersion ?? "unknown"}");
+            {
+                lines.Add($"Current NameBuilder build: {FormatHashPreview(statusInfo.InstalledHash)}");
                 if (statusInfo.RegisteredTypes != null && statusInfo.RegisteredTypes.Count > 0)
                 {
                     lines.Add("Registered types: " + string.Join(", ", statusInfo.RegisteredTypes));
@@ -160,6 +160,17 @@ namespace NameBuilderConfigurator
 
             return string.Join(Environment.NewLine, lines.Where(l => !string.IsNullOrWhiteSpace(l)));
         }
+
+        private static string FormatHashPreview(string hash)
+        {
+            if (string.IsNullOrWhiteSpace(hash))
+            {
+                return "unknown";
+            }
+
+            var normalized = hash.Trim();
+            return normalized.Length <= 12 ? normalized : normalized.Substring(0, 12) + "…";
+        }
     }
 
     internal sealed class PluginRegistrationStatusInfo
@@ -168,5 +179,6 @@ namespace NameBuilderConfigurator
         public string InstalledVersion { get; set; }
         public string StatusMessage { get; set; }
         public IReadOnlyList<string> RegisteredTypes { get; set; } = Array.Empty<string>();
+        public string InstalledHash { get; set; }
     }
 }

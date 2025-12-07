@@ -19,7 +19,6 @@ namespace NameBuilderConfigurator
         private TextBox formatTextBox;
         private NumericUpDown maxLengthNumeric;
         private TextBox truncationTextBox;
-        private TextBox defaultTextBox;
         private TextBox prefixTextBox;
         private TextBox suffixTextBox;
         private NumericUpDown timezoneOffsetNumeric;
@@ -29,6 +28,7 @@ namespace NameBuilderConfigurator
         private Button cancelButton;
         
         private Label formatExampleLabel;
+        private readonly ToolTip helpToolTip;
         
         public FieldConfiguration Result { get; private set; }
         
@@ -50,6 +50,14 @@ namespace NameBuilderConfigurator
             };
             
             attrMetadata = metadata;
+            
+            helpToolTip = new ToolTip
+            {
+                AutoPopDelay = 12000,
+                InitialDelay = 300,
+                ReshowDelay = 100,
+                ShowAlways = true
+            };
             
             InitializeComponent();
             LoadConfiguration();
@@ -95,6 +103,7 @@ namespace NameBuilderConfigurator
                 "optionset", "picklist", "number", "currency", "boolean"
             });
             typeComboBox.SelectedIndexChanged += TypeComboBox_SelectedIndexChanged;
+            helpToolTip.SetToolTip(typeComboBox, "Data type of the field. Auto-detect infers from metadata; override if needed. Affects format examples and timezone visibility.");
             this.Controls.Add(typeComboBox);
             y += 35;
             
@@ -105,6 +114,7 @@ namespace NameBuilderConfigurator
                 Location = new Point(controlX, y),
                 Size = new Size(controlWidth, 23)
             };
+            helpToolTip.SetToolTip(formatTextBox, "Format string for dates (.NET format) or numbers (e.g., #,##0.00). Leave blank to use field value as-is.");
             this.Controls.Add(formatTextBox);
             y += 25;
             
@@ -126,6 +136,7 @@ namespace NameBuilderConfigurator
                 Location = new Point(controlX, y),
                 Size = new Size(halfWidth, 23)
             };
+            helpToolTip.SetToolTip(prefixTextBox, "Static text prepended before the field value. Example: 'INV-' becomes 'INV-12345'.");
             this.Controls.Add(prefixTextBox);
             y += 35;
             
@@ -136,6 +147,7 @@ namespace NameBuilderConfigurator
                 Location = new Point(controlX, y),
                 Size = new Size(controlWidth, 23)
             };
+            helpToolTip.SetToolTip(suffixTextBox, "Static text appended after the field value. Example: ' Inc' becomes 'Company Inc'.");
             this.Controls.Add(suffixTextBox);
             y += 35;
             
@@ -149,6 +161,7 @@ namespace NameBuilderConfigurator
                 Maximum = 10000,
                 Value = 0
             };
+            helpToolTip.SetToolTip(maxLengthNumeric, "Maximum length for this field. Set to 0 for unlimited. Truncation is applied after prefix/suffix.");
             var clearMaxButton = new Button
             {
                 Text = "Clear",
@@ -156,6 +169,7 @@ namespace NameBuilderConfigurator
                 Size = new Size(60, 23)
             };
             clearMaxButton.Click += (s, e) => maxLengthNumeric.Value = 0;
+            helpToolTip.SetToolTip(clearMaxButton, "Reset max length to unlimited.");
             this.Controls.Add(maxLengthNumeric);
             this.Controls.Add(clearMaxButton);
             y += 35;
@@ -168,17 +182,8 @@ namespace NameBuilderConfigurator
                 Size = new Size(controlWidth, 23),
                 Text = "..."
             };
+            helpToolTip.SetToolTip(truncationTextBox, "Indicator appended when truncation occurs. Default is '...'. Example: 'Very long text...' if max length is exceeded.");
             this.Controls.Add(truncationTextBox);
-            y += 35;
-            
-            // Default Value
-            AddLabel("Default Value:", 15, y);
-            defaultTextBox = new TextBox
-            {
-                Location = new Point(controlX, y),
-                Size = new Size(controlWidth, 23)
-            };
-            this.Controls.Add(defaultTextBox);
             y += 35;
             
             // Timezone Offset
@@ -191,6 +196,7 @@ namespace NameBuilderConfigurator
                 Maximum = 14,
                 Value = 0
             };
+            helpToolTip.SetToolTip(timezoneOffsetNumeric, "Hours to add/subtract for date/time conversion (UTC offset). Only applies to date/datetime fields. Example: -5 for EST.");
             var clearTzButton = new Button
             {
                 Text = "Clear",
@@ -198,18 +204,22 @@ namespace NameBuilderConfigurator
                 Size = new Size(60, 23)
             };
             clearTzButton.Click += (s, e) => timezoneOffsetNumeric.Value = 0;
+            helpToolTip.SetToolTip(clearTzButton, "Reset timezone offset to 0 (UTC).");
             this.Controls.Add(timezoneOffsetNumeric);
             this.Controls.Add(clearTzButton);
             y += 35;
             
-            // Alternate Field Button
+            // Default/Alternate Button
             alternateFieldButton = new Button
             {
-                Text = config.AlternateField != null ? "Edit Alternate Field..." : "Add Alternate Field...",
+                Text = (config.AlternateField != null || !string.IsNullOrWhiteSpace(config.Default))
+                    ? "Edit Default if blank..."
+                    : "Default if blank...",
                 Location = new Point(15, y),
                 Size = new Size(200, 30)
             };
             alternateFieldButton.Click += AlternateFieldButton_Click;
+            helpToolTip.SetToolTip(alternateFieldButton, "Configure fallback behavior: pick an alternate field and/or provide a literal default when this field is empty.");
             this.Controls.Add(alternateFieldButton);
             y += 40;
             
@@ -221,6 +231,7 @@ namespace NameBuilderConfigurator
                 Size = new Size(200, 30)
             };
             conditionButton.Click += ConditionButton_Click;
+            helpToolTip.SetToolTip(conditionButton, "Add conditional logic to include this field only when specified criteria are met (e.g., status equals 'active').");
             this.Controls.Add(conditionButton);
             y += 50;
             
@@ -272,7 +283,6 @@ namespace NameBuilderConfigurator
             formatTextBox.Text = config.Format ?? "";
             maxLengthNumeric.Value = config.MaxLength ?? 0;
             truncationTextBox.Text = config.TruncationIndicator ?? "...";
-            defaultTextBox.Text = config.Default ?? "";
             prefixTextBox.Text = config.Prefix ?? "";
             suffixTextBox.Text = config.Suffix ?? "";
             timezoneOffsetNumeric.Value = config.TimezoneOffsetHours ?? 0;
@@ -300,13 +310,15 @@ namespace NameBuilderConfigurator
         {
             var altConfig = config.AlternateField ?? new FieldConfiguration();
             
-            using (var dialog = new AlternateFieldDialog(altConfig))
+            using (var dialog = new AlternateFieldDialog(altConfig, config.Default))
             {
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
                     config.AlternateField = dialog.Result;
-                    alternateFieldButton.Text = config.AlternateField != null ? 
-                        "Edit Alternate Field..." : "Add Alternate Field...";
+                    config.Default = dialog.DefaultValue;
+                    alternateFieldButton.Text = (config.AlternateField != null || !string.IsNullOrWhiteSpace(config.Default))
+                        ? "Edit Default if blank..."
+                        : "Default if blank...";
                 }
             }
         }
@@ -333,7 +345,6 @@ namespace NameBuilderConfigurator
             config.Format = string.IsNullOrWhiteSpace(formatTextBox.Text) ? null : formatTextBox.Text;
             config.MaxLength = maxLengthNumeric.Value == 0 ? null : (int?)maxLengthNumeric.Value;
             config.TruncationIndicator = string.IsNullOrWhiteSpace(truncationTextBox.Text) ? null : truncationTextBox.Text;
-            config.Default = string.IsNullOrWhiteSpace(defaultTextBox.Text) ? null : defaultTextBox.Text;
             config.Prefix = string.IsNullOrWhiteSpace(prefixTextBox.Text) ? null : prefixTextBox.Text;
             config.Suffix = string.IsNullOrWhiteSpace(suffixTextBox.Text) ? null : suffixTextBox.Text;
             config.TimezoneOffsetHours = timezoneOffsetNumeric.Value == 0 ? null : (int?)timezoneOffsetNumeric.Value;

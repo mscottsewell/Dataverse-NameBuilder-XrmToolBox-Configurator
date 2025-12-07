@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 
@@ -12,6 +13,10 @@ namespace NameBuilderConfigurator
     internal sealed class PluginAssemblyInstaller
     {
         private readonly IOrganizationService service;
+
+        // Lazy-loaded metadata for the packaged NameBuilder assembly (hash + public key token)
+        private static readonly Lazy<(string Hash, string PublicKeyToken)> ExpectedAssemblyMetadata =
+            new Lazy<(string Hash, string PublicKeyToken)>(LoadExpectedAssemblyMetadata, isThreadSafe: true);
 
         public PluginAssemblyInstaller(IOrganizationService organizationService)
         {
@@ -36,7 +41,9 @@ namespace NameBuilderConfigurator
             var version = assemblyName?.Version?.ToString() ?? "1.0.0.0";
             var culture = string.IsNullOrWhiteSpace(assemblyName?.CultureName) ? "neutral" : assemblyName.CultureName;
             var publicKeyToken = FormatPublicKeyToken(assemblyName?.GetPublicKeyToken());
-            var content = Convert.ToBase64String(File.ReadAllBytes(absolutePath));
+            var rawBytes = File.ReadAllBytes(absolutePath);
+            var content = Convert.ToBase64String(rawBytes);
+            var fileHash = ComputeSha256Hex(rawBytes);
 
             var existingAssembly = FindExistingAssembly(shortName);
             Guid assemblyId;
@@ -92,7 +99,8 @@ namespace NameBuilderConfigurator
                 CreatedPluginTypes = pluginTypeResult.Created,
                 ExistingPluginTypes = pluginTypeResult.Existing,
                 PluginTypeNames = pluginClasses.Select(c => c.TypeName).ToList(),
-                AssemblyPath = absolutePath
+                AssemblyPath = absolutePath,
+                AssemblyHash = fileHash
             };
         }
 
@@ -128,10 +136,33 @@ namespace NameBuilderConfigurator
             return BitConverter.ToString(token).Replace("-", string.Empty).ToLowerInvariant();
         }
 
+        private static string ComputeSha256Hex(byte[] data)
+        {
+            if (data == null || data.Length == 0)
+            {
+                return null;
+            }
+
+            using (var sha = SHA256.Create())
+            {
+                var hash = sha.ComputeHash(data);
+                var sb = new System.Text.StringBuilder(hash.Length * 2);
+                foreach (var b in hash)
+                {
+                    sb.Append(b.ToString("x2"));
+                }
+                return sb.ToString();
+            }
+        }
+
         private IReadOnlyList<PluginClassDefinition> DiscoverPluginClasses(string absolutePath)
         {
             try
             {
+                // Validate assembly name before loading to ensure it's the expected plugin
+                var assemblyName = AssemblyName.GetAssemblyName(absolutePath);
+                ValidateExpectedAssembly(assemblyName, absolutePath);
+
                 var assembly = Assembly.LoadFrom(absolutePath);
                 var pluginContract = typeof(IPlugin);
                 var definitions = new List<PluginClassDefinition>();
@@ -176,6 +207,111 @@ namespace NameBuilderConfigurator
                 var loaderDetails = string.Join(" | ", ex.LoaderExceptions.Select(e => e?.Message).Where(m => !string.IsNullOrWhiteSpace(m)));
                 throw new InvalidOperationException($"Unable to inspect the plug-in assembly: {loaderDetails}", ex);
             }
+        }
+
+        private static void ValidateExpectedAssembly(AssemblyName assemblyName, string assemblyPath)
+        {
+            if (assemblyName == null)
+            {
+                throw new InvalidOperationException("Unable to read assembly metadata from the selected file. Verify that it is a valid .NET assembly.");
+            }
+
+            // Accept both exact name match and files that match the expected name
+            var fileName = Path.GetFileNameWithoutExtension(assemblyPath);
+            var asmName = assemblyName.Name;
+
+            if (!asmName.Equals("NameBuilder", StringComparison.OrdinalIgnoreCase) &&
+                !fileName.Equals("NameBuilder", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"The selected DLL does not appear to be the NameBuilder assembly. " +
+                    $"Expected assembly name 'NameBuilder' but found '{asmName}'.");
+            }
+
+            // Compare against packaged metadata if available (public key token + hash)
+            var expected = ExpectedAssemblyMetadata.Value;
+
+            if (!string.IsNullOrWhiteSpace(expected.PublicKeyToken))
+            {
+                var candidateToken = FormatPublicKeyToken(assemblyName.GetPublicKeyToken());
+                if (string.IsNullOrWhiteSpace(candidateToken) ||
+                    !candidateToken.Equals(expected.PublicKeyToken, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        "The selected DLL does not match the signed NameBuilder assembly (public key token mismatch).");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(expected.Hash))
+            {
+                var currentHash = ComputeSha256Hex(File.ReadAllBytes(assemblyPath));
+                if (string.IsNullOrWhiteSpace(currentHash) ||
+                    !currentHash.Equals(expected.Hash, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        "The selected DLL does not match the packaged NameBuilder build (hash mismatch).");
+                }
+            }
+        }
+
+        private static (string Hash, string PublicKeyToken) LoadExpectedAssemblyMetadata()
+        {
+            try
+            {
+                var bundledPath = ResolveBundledAssemblyPath();
+                if (string.IsNullOrWhiteSpace(bundledPath) || !File.Exists(bundledPath))
+                {
+                    return (Hash: null, PublicKeyToken: null);
+                }
+
+                var bytes = File.ReadAllBytes(bundledPath);
+                var hash = ComputeSha256Hex(bytes);
+                var name = AssemblyName.GetAssemblyName(bundledPath);
+                var pkt = FormatPublicKeyToken(name?.GetPublicKeyToken());
+                return (Hash: hash, PublicKeyToken: pkt);
+            }
+            catch
+            {
+                // Fallback to name-only validation if packaged metadata cannot be read
+                return (Hash: null, PublicKeyToken: null);
+            }
+        }
+
+        private static string ResolveBundledAssemblyPath()
+        {
+            try
+            {
+                var assemblyLocation = Assembly.GetExecutingAssembly().Location;
+                var baseDir = string.IsNullOrWhiteSpace(assemblyLocation)
+                    ? null
+                    : Path.GetDirectoryName(assemblyLocation);
+
+                var candidates = new List<string>();
+                if (!string.IsNullOrWhiteSpace(baseDir))
+                {
+                    candidates.Add(Path.Combine(baseDir, "Assets", "DataversePlugin", "NameBuilder.dll"));
+
+                    var parent = Directory.GetParent(baseDir);
+                    if (parent != null)
+                    {
+                        candidates.Add(Path.Combine(parent.FullName, "Assets", "DataversePlugin", "NameBuilder.dll"));
+                    }
+                }
+
+                foreach (var candidate in candidates)
+                {
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore resolution failures and allow fallback validation
+            }
+
+            return null;
         }
 
         private (int Created, int Existing) EnsurePluginTypes(Guid assemblyId, IReadOnlyList<PluginClassDefinition> pluginClasses)
@@ -242,5 +378,6 @@ namespace NameBuilderConfigurator
         public int ExistingPluginTypes { get; set; }
         public IReadOnlyList<string> PluginTypeNames { get; set; } = Array.Empty<string>();
         public string AssemblyPath { get; set; }
+        public string AssemblyHash { get; set; }
     }
 }

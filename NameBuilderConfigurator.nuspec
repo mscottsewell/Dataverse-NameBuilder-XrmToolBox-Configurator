@@ -5,9 +5,8 @@
     <version>$version$</version>
     <title>NameBuilder Configurator</title>
     <authors>Scott Sewell</authors>
-    <owners>Scott Sewell</owners>
+    <owners>mScottSewell</owners>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
-    <license type="expression">MIT</license>
     <projectUrl>https://github.com/mscottsewell/Dataverse-NameBuilder-XrmToolBox-Configurator</projectUrl>
     <summary>Installation of the NameBuilder plugin https://github.com/mscottsewell/Dataverse-NameBuilder is required for use.</summary>
     <description>Visual designer for building NameBuilder JSON payloads inside XrmToolBox. See the README for usage instructions.</description>

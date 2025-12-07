@@ -48,43 +48,75 @@ Restart XrmToolBox and the plug-in appears in the tool list.
 
 | Area | Description |
 | --- | --- |
-| Ribbon | Buttons for Load Entities, Retrieve Configuration (step picker), Import JSON, Export JSON, Copy JSON, Publish Configuration. |
-| Left panel | Entity dropdown, view picker, sample record picker, attribute list. Double-click attributes to add field blocks. |
-| Center panel | Field block surface. Each block encapsulates a `FieldConfiguration`. Drag handles allow reordering; delete, move up/down, and edit icons provide block management. |
-| Right panel | Split into Preview (text), JSON tab, and a property pane that switches between “Global Configuration” and the selected block. |
-| Status bar | Shows success/error text, especially after publishing or entity loads. |
+| **Ribbon** | Top toolbar with buttons: Load Entities (reload metadata), Retrieve Configuration (pull from Dataverse), Register Plug-in (verify/deploy), Import JSON, Export JSON, Copy JSON, and Publish Configuration. Hover over each button for a tooltip. |
+| **Solution Dropdown** | Optional filter to scope entities to a specific Dataverse solution. Display names are shown; selecting a solution loads only entities in that solution. Choose "(Default)" to see all entities. |
+| **Entity Dropdown** | Select the Dataverse entity whose NameBuilder pattern you want to edit. Populates from the filtered solution or all available entities. |
+| **View Dropdown** | Optional system or personal view selector. When set, the Sample Record dropdown only shows rows from that view. Leave blank to show all records. |
+| **Sample Record Dropdown** | Pick a row to feed the live preview. Records come from the selected view (or all rows if no view is chosen). As you change the sample record, the preview updates in real-time. |
+| **Available Attributes List** | Shows all attributes from the selected entity. Double-click any attribute to append it as a field block; logical name shown in parentheses below display name. |
+| **Field Blocks Panel** | Center area showing ordered field blocks. Each block displays the attribute name, type, and key properties (prefix/suffix/format if configured). Click a block to edit it; drag ▲/▼ buttons to reorder; click ✕ to delete. |
+| **Properties Panel (right)** | Context-sensitive: shows **Global Configuration** (target field, max length, tracing, defaults) when the entity header is selected, or **Field Properties** when a field block is selected. |
+| **JSON Tab** | Read-only `Consolas` view of the generated NameBuilder JSON payload. Can be copied to clipboard or exported to disk. |
+| **Live Preview Tab** | Shows the assembled name string for the currently selected sample record, reflecting all truncation, defaults, alternates, and field formatting. |
+| **Status Label** | Displays progress (e.g., "Loading entities...") or success/error messages. Hover for tooltips with more detail. |
 
-### Global configuration tab
+### Global Configuration Section
 
-- **Target Field** – writes `targetField` in the JSON.
-- **Global Max Length** – sets root `maxLength` (0 = unlimited).
-- **Enable Tracing** – toggles `enableTracing` in the JSON.
-- **Default field properties** – prefix/suffix/number format/date format/timezone offset values persisted at `%APPDATA%\NameBuilderConfigurator\settings.json`. When you change them you can push the new defaults into existing blocks that still match the previous default.
+### Global Configuration Section
 
-### Field block properties
+When you click the entity header block or first load an entity, the right panel switches to **Global Configuration**, showing:
 
-Each block maps directly to the NameBuilder JSON schema documented upstream. Important options:
+- **Target Field Name** – Logical name of the destination column (defaults to `name`). This becomes `targetField` in the JSON.
+- **Global Max Length** – Optional length cap applied to the final assembled string. Set to 0 for unlimited.
+- **Enable Tracing** – When checked, the NameBuilder plug-in writes verbose traces to the Dataverse Plug-in Trace Log for debugging.
+- **Default Field Properties** (expandable section) – Reusable prefix, suffix, number format, date format, and timezone values that propagate to new blocks and can retroactively update existing blocks that still use the prior default value.
+
+### Field Block Properties
+
+Each block maps directly to the NameBuilder JSON schema. Important options exposed in the property pane when a field block is selected:
 
 - `Type` (auto-detect/string/lookup/date/datetime/optionset/number/currency/boolean).
 - `Prefix` / `Suffix` (string).
 - `Format` (date/number/currency patterns as defined in the NameBuilder docs).
 - `MaxLength` & `TruncationIndicator`.
-- `Default` value (displayed if the referenced attribute is null/empty).
+- `Default if blank` button (opens the fallback dialog so you can chain an alternate attribute and/or a literal default string that only renders when the primary field is empty).
 - `TimezoneOffsetHours` (exposed for date/datetime blocks when the upstream plug-in needs to normalize local time).
 - `IncludeIf` builder (launches the Condition dialog to author simple comparisons or compound `anyOf` / `allOf` trees).
-- `AlternateField` builder (launches the Alternate Field dialog to supply fallback logic if the primary attribute is empty).
+- Behavior summary panel (read-only text beneath the buttons that explains—in plain English—the fallback chain plus any includeIf logic so you can sanity-check complex rules).
+
+#### Default-if-blank workflow & fallbacks
+
+Click **Default if blank** to open the combined fallback dialog:
+
+1. Pick another attribute from the entity (or leave the field set to `(None)` if you only want a literal default).
+2. Provide the string that should appear once every upstream attribute in the chain is empty. The dialog enforces entering a default when you pick an alternate field so Dataverse never shows a blank placeholder unexpectedly.
+3. Save to push either:
+  - a nested `alternateField` element (when you selected another attribute, optionally with its own default), or
+  - a top-level `default` value (when you only supplied literal text).
+
+The property pane now explains the evaluation order via the behavior summary box directly under the buttons (e.g., “If blank -> use prioritycode. If blank -> default to "Hot". Condition: prioritycode equals "1"”). Use this read-only text to verify the final behavior without drilling into the raw JSON.
 
 ## 6. Typical Workflows
 
 ### 6.1 Build a configuration from scratch
 
-1. Connect and **Load Entities**.
-2. Choose an entity ➜ the tool loads metadata and populates the attribute list.
-3. Double-click attributes (or drag from the list) to add blocks. The configurator infers types from the metadata but you can override them.
-4. Use the property pane to add prefixes (“INV-”), suffixes, date / number formats, etc.
-5. Watch the Live Preview to ensure the rendered name string looks correct.
-6. Switch to the JSON tab to inspect the payload (it matches the schema described in the upstream Docs folder).
-7. Export, copy, or publish the JSON (see section 8).
+1. **Connect** via XrmToolBox connection wizard.
+2. **Load Entities** by clicking the ribbon button (metadata and views load automatically). This fetches all solutions, entities, views, and sample records from Dataverse.
+3. (Optional) **Filter by Solution** using the Solution dropdown to narrow the entity list.
+4. **Choose an Entity** from the Entity dropdown to begin configuring its NameBuilder pattern.
+5. (Optional) **Choose a View** to restrict which sample records appear in the Sample Record dropdown.
+6. (Optional) **Pick a Sample Record** to seed the live preview with real data as you build.
+7. **Add Field Blocks** by double-clicking attributes in the **Available Attributes** list. Field type auto-detects based on metadata but can be overridden in properties.
+8. (Optional) **Adjust Global Properties**: Click the entity header block to show **Global Configuration**, then set target field, max length, enable tracing, and default prefix/suffix/formats.
+9. **Edit each field block**:
+   - Click the block to open its properties in the right panel.
+   - Set prefix/suffix, format (for dates/numbers), max length, and truncation indicator.
+   - For date/datetime fields, set timezone offset if needed.
+   - Click **"Default if blank"** to configure fallback chains (alternate fields or literal defaults).
+   - Click **"Add Condition"** to gate the block with `includeIf` logic (e.g., "only include if statuscode equals 1").
+10. **Monitor Live Preview** as you build to ensure output matches expectations.
+11. **Validate JSON** by switching to the JSON tab to inspect the schema (copy/export if needed for offline review).
+12. **Publish** back to Dataverse or **Export/Copy** the JSON for later use.
 
 ### 6.2 Import existing JSON
 
@@ -92,19 +124,24 @@ Each block maps directly to the NameBuilder JSON schema documented upstream. Imp
 2. Choose a `.json` file that uses the canonical schema described in the [Dataverse-NameBuilder Docs](https://github.com/mscottsewell/Dataverse-NameBuilder/tree/main/Docs).
 3. The designer recreates the field blocks, reapplies defaults where missing, and updates the preview/JSON panes.
 
-### 6.3 Pull configuration from Dataverse steps
+### 6.3 Retrieve configuration from Dataverse steps
 
-1. Click **Retrieve Configuration**.
-2. The tool locates plug-in types under the NameBuilder assembly and enumerates their `sdkmessageprocessingstep` rows.
-3. Choose a step from the dialog. The unsecure configuration (JSON) is parsed and applied to the designer.
-4. Make edits and publish back (see below).
+1. Click **Retrieve Configuration** on the ribbon.
+2. A dialog appears listing all NameBuilder plug-in types and their registered **Create** and **Update** steps for each entity.
+3. Select a specific step containing the configuration you want to edit.
+4. The tool queries the step's unsecure configuration (JSON), parses it, and populates the designer with all field blocks and global settings.
+5. Edit as needed and publish back (see 6.4) or export for backup.
 
 ### 6.4 Publish back to Dataverse
 
-1. Click **Publish Configuration**.
-2. The tool bundles the JSON + attribute filter list into a `PublishContext` and ensures the appropriate Create/Update steps exist for the selected entity (reusing the same logic as described in the upstream plugin documentation’s deployment guide).
-3. Updated JSON and `filteringattributes` values are applied to each step’s `configuration` column.
-4. Status bar displays the steps touched (e.g., `Published to: contact - Create, contact - Update`).
+1. Ensure an entity is selected and at least one field block exists.
+2. Click **Publish Configuration** on the ribbon.
+3. A dialog appears asking which steps to update: **Create step**, **Update step**, or **both**.
+4. Select the desired steps and confirm. The tool:
+   - Bundles the JSON and calculates the attribute filter list based on all referenced fields.
+   - Updates (or creates if missing) the corresponding `sdkmessageprocessingstep` rows in Dataverse.
+   - Sets both the `configuration` (JSON) and `filteringattributes` columns.
+5. Status bar displays success or errors (e.g., "Published to: contact - Create, contact - Update").
 
 ## 7. JSON Schema Reference (high-level)
 
@@ -180,18 +217,33 @@ This section mirrors the canonical schema in the Dataverse-NameBuilder Docs fold
 
 ## 8. Settings, Defaults, and Local Storage
 
-- Stored at `%APPDATA%\NameBuilderConfigurator\settings.json`.
-- Properties include splitter positions, preview height, and all default prefix/suffix/format values.
-- Defaults propagate when you add new fields **and** when existing fields still match the previous default (so changing the default suffix can update multiple blocks automatically).
+The tool persists user preferences and defaults at `%APPDATA%\NameBuilderConfigurator\settings.json`. Properties include:
+
+- **Splitter positions** – window layout (left/right and top/bottom split pane positions).
+- **Preview height** – height of the live preview area.
+- **Default Prefix** – prepended to new string fields; propagates to existing blocks still using the prior default.
+- **Default Suffix** – appended to new string fields; propagates similarly.
+- **Default Number Format** – applied to new number/currency fields (e.g., `#,##0.00` or `0.0K`).
+- **Default Date Format** – applied to new date/datetime fields (e.g., `yyyy-MM-dd` or `MM/dd/yyyy`).
+- **Default Timezone Offset** – applied to new date/datetime fields for UTC conversion.
+
+**Propagation Behavior**: When you change a default value (e.g., suffix), the tool automatically updates any existing field blocks that still match the _previous_ default. This makes bulk edits painless: change the suffix once and watch all blocks that still used it update automatically.
+
+Defaults are applied automatically when new blocks are created but can also be manually propagated via a button in the Global Configuration panel.
 
 ## 9. Troubleshooting & Tips
 
 | Symptom | Resolution |
 | --- | --- |
-| “NameBuilder plug-in must be installed first” dialog | Deploy the NameBuilder assembly/steps described in the [Dataverse-NameBuilder README](https://github.com/mscottsewell/Dataverse-NameBuilder) and retry. |
-| Version conflicts during build | Ensure `MscrmTools.Xrm.Connection` and `XrmToolBoxPackage` NuGet packages are on the versions referenced in the `.csproj`. Run `dotnet restore` after editing. |
-| JSON validation errors while importing | Validate the file against the schema documented in the upstream Docs folder; the configurator expects identical casing/property names. |
-| Publish failures | Check that you have Create/Update steps registered for the entity and that your XrmToolBox connection has privileges to update `sdkmessageprocessingstep`. Enable tracing in the JSON to capture plug-in-side diagnostics. |
+| "NameBuilder plug-in must be installed first" dialog | Click **Register Plug-in** on the ribbon, browse to `Assets\DataversePlugin\NameBuilder.dll`, and confirm the deployment. The tool will deploy the assembly and create necessary plug-in types. Retry after deployment. |
+| Entities fail to load | Verify your XrmToolBox connection has Customizer/System Administrator privileges. Click **Load Entities** again to retry. |
+| Sample records don't appear | Ensure a View is selected (if required) and that the view contains at least one row. Change the Sample Record dropdown to refresh the list. |
+| Publish button is disabled | Ensure: (1) an entity is selected, (2) at least one field block exists, (3) the NameBuilder plug-in is registered (use **Register Plug-in**). |
+| JSON import errors | Validate the file against the schema in the [Dataverse-NameBuilder Docs](https://github.com/mscottsewell/Dataverse-NameBuilder/tree/main/Docs) folder. The configurator expects exact property names and casing (e.g., `targetField`, not `targetfield`). |
+| Publish fails | Check that: (1) you have Create/Update step registrations for the entity, (2) your connection has privileges to update `sdkmessageprocessingstep` rows, (3) the target field exists on the entity. Enable tracing in Global Configuration to capture plug-in-side diagnostics. |
+| Truncation not working as expected | Verify `maxLength` is set on the global config or individual field, and `truncationIndicator` (default `...`) is configured. Test with a sample record that exceeds the limit. |
+| Timezone offset not applied | Verify the field type is `date` or `datetime` and `timezoneOffsetHours` is set on the field (not 0). Timezone adjustments only apply to date/time types. |
+| Missing attributes in the Available Attributes list | Click **Load Entities** to refresh metadata. Some attributes may be hidden or marked as non-searchable in metadata; these still appear in the list but may not be queryable. |
 
 ## 10. Additional Resources
 
