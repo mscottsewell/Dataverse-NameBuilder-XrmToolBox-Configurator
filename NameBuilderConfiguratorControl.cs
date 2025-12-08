@@ -92,6 +92,62 @@ namespace NameBuilderConfigurator
         private static readonly Font SpacePreviewInputFont = new Font("Consolas", 9F);
         private static readonly Font SpacePreviewLabelFont = new Font("Consolas", 8F);
         private const string EmbeddedNameBuilderMonoline32Png = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAAEEfUpiAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsIAAA7CARUoSoAAAAAZdEVYdFNvZnR3YXJlAFBhaW50Lk5FVCA1LjEuMTGKCBbOAAAAuGVYSWZJSSoACAAAAAUAGgEFAAEAAABKAAAAGwEFAAEAAABSAAAAKAEDAAEAAAACAAAAMQECABEAAABaAAAAaYcEAAEAAABsAAAAAAAAAPJ2AQDoAwAA8nYBAOgDAABQYWludC5ORVQgNS4xLjExAAADAACQBwAEAAAAMDIzMAGgAwABAAAAAQAAAAWgBAABAAAAlgAAAAAAAAACAAEAAgAEAAAAUjk4AAIABwAEAAAAMDEwMAAAAABc7WH6CeiquwAABUxJREFUSEu1l29sk1Ubxn9DjUvriJHUBa3LjAV5y3CpCy4EwRpjYyYJ9kWStyzwfpl+WMhK/NI0mhANNgsSAiYNIQQ2CVlAkxltyFz6QnUZwjsWGN2HOf44ATMXtjDtUhqt8/LD+pT2rJsT9fepz7mv677POc95zumBHDabbdr6DfCkJAEsyjU8YEXKAKxoIa8WPSkHVo6pqSnKysrGAGhsbJQkORwOASsKnRW3bt2y3LOKADA9PS1JqqyszJgxZTIZ7d27V263W2NjY5qYmBDwZl4RCoUkSX6/X06nU5FIpGSZy0Cn2QjAlStXCjs4M6RC8lFJq1atyppxrBnOZShJYk5BLBaTJNXU1Gjt2rWSpMbGxrtCyylJo6OjkqShoaGiTP+fmJhQMpmUx+PR6tWrBTxWKDDpOXXqVGFiffzxCQGLTWEpGkZGRorMFjt37pw9wFJUVVVlTbNmZudFUzsnnZ2dpvlDU1OKr9PptOrr64vMktTf36+BgQE1NzcLuFLwxcwQjUYlSVNTU2pra5PH49GGDRuUSOTfr7Zt26br169LMz1qKkoAOGOxmOrq6hQIBJRMJvNGSWpubpYkeb1eVVVVLWgyNwBf/ScQ0PDwsFV13BTNx4mKiooscA34txmcj/KOjg7F4/GiIQAXTOFcfOdwOIrMkpTJZAQ8YopnEQ6HdfPmTdMvzfTidVM/i6VLl6ZNowXgNvWlWG0aNbNNLOjVAWC321NmAuBfpm4+3i80x+PxhVcHPgLGCxOk02kBj5tCk/pgMChJ6uvrK/RLklwul9rb21VbW3sHeM80v9zU1KRvhr+RJKVSKXm9Xrndbrndbu3atSufyOfzKRwOzxpSkyVIJpNqamrS8uXL1dramt8k72TuqLa2VpIUjUZnJXgtX6IEvb296ujoyD8DP5oJADItLS1yu906dOiQ0uni9RSPx3X79m1rP3/GNAN4VqxY8XN3d7ckKZvNKhqNyuVyKRQKyWazWXv9adNYiieA1kX3Lxpvb2+XJCUSCQGbTOGf4RHgU7/fr76+PqVSdxdrKpXSuXPntHnzZgFfAEtN81/lnUgkou7ublVWVuratWv54qXYs2ePgN1mknvlucCWgI4ePSproS+EQCAg4AUzmUnx0VKaxRUPVbB161b27dtnxubE6XQCPGy23yuff9XTYw5yTi5cuLDg1fpniForej6OHz+u3Ib2j/DZwMCAWTPP8PCwgP+ZpvlYyBoo5Pvx8bmP9snJSYAfzPZ75T7gLeCnrq4u+f1+7d+/3xz0LA4fPizgW+AEEAYagKeAB80CpSgD3nW73b8ODg4WJe7p6ZHdblckEtHg4KBSqZR+yWaVzWaVSqU0NDSk1tZW2Ww29ZRYsLt37xYg4BWzaCFvbN++XSdPnlRLS4vWrFkjl8ul9evXKxwOq6urS2NjY/mk2WxWmUxG1iXGJBaLqby8XG1tbZKkgwcPyvxTeH/hA8CyZctoaGigoaHBDOWZnJzk8uXLnD9/nt7eXi5dugSAx+PB6XRy7NgxgsEgoVCITObuxSqdTpObhTkpB05UV1crGAyqs7NTIyMjc46wFMFgUOb94sCBA9b0/9csWGY25Galr7+/31NXVwe5K+fFixdJJBKcPn2a0dFRqqur8Xq9rFu3jpUrV7JkyRIAduzYwaZNM4eez+fjyJEj2O12Nm7c+CXwEvBbYbFSHbBYBLiAZ4HngeccDsfTfr9/sc/no76+3tpuAbhx4wZnz57l6tWreDweampq2LJlC2fOnPkg9zVMF2X/m3g0d3F6GzgJjAKTwCe5zv8hvwOi70cqFJ6k9QAAAABJRU5ErkJggg==";
+        private string FormatFieldLabel(string logicalName)
+        {
+            if (string.IsNullOrWhiteSpace(logicalName))
+            {
+                return "field";
+            }
+
+            var friendly = GetAttributeDisplayName(logicalName);
+            if (string.IsNullOrWhiteSpace(friendly) || friendly.Equals(logicalName, StringComparison.OrdinalIgnoreCase))
+            {
+                return logicalName;
+            }
+
+            return $"{friendly} ({logicalName})";
+        }
+
+        private string GetAttributeDisplayName(string logicalName)
+        {
+            if (string.IsNullOrWhiteSpace(logicalName))
+            {
+                return null;
+            }
+
+            var meta = allAttributes?.FirstOrDefault(a => a.LogicalName.Equals(logicalName, StringComparison.OrdinalIgnoreCase)) ??
+                       currentAttributes?.FirstOrDefault(a => a.LogicalName.Equals(logicalName, StringComparison.OrdinalIgnoreCase));
+
+            return meta?.DisplayName?.UserLocalizedLabel?.Label ?? logicalName;
+        }
+
+        private string FormatOptionValue(string logicalName, string rawValue)
+        {
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return rawValue;
+            }
+
+            if (!int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numeric))
+            {
+                return rawValue;
+            }
+
+            var meta = allAttributes?.FirstOrDefault(a => a.LogicalName.Equals(logicalName, StringComparison.OrdinalIgnoreCase)) ??
+                       currentAttributes?.FirstOrDefault(a => a.LogicalName.Equals(logicalName, StringComparison.OrdinalIgnoreCase));
+
+            if (meta is EnumAttributeMetadata enumMeta)
+            {
+                var option = enumMeta.OptionSet?.Options?.FirstOrDefault(o => o.Value == numeric);
+                var label = option?.Label?.UserLocalizedLabel?.Label;
+                if (!string.IsNullOrWhiteSpace(label))
+                {
+                    return $"{label} ({numeric})";
+                }
+            }
+
+            return rawValue;
+        }
 
         public NameBuilderConfiguratorControl()
         {
@@ -4064,7 +4120,7 @@ namespace NameBuilderConfigurator
                 Location = new Point(10, y),
                 Size = new Size(propertiesPanel.ClientSize.Width - 20, Math.Max(120, propertiesPanel.ClientSize.Height - y - 20)),
                 BorderStyle = BorderStyle.FixedSingle,
-                BackColor = SystemColors.Window,
+                BackColor = propertiesPanel.BackColor,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
             };
 
@@ -4076,6 +4132,7 @@ namespace NameBuilderConfigurator
                 Dock = DockStyle.Fill,
                 BackColor = summaryContainer.BackColor,
                 ForeColor = Color.Black,
+                Font = new Font("Segoe UI", 9F),
                 ScrollBars = ScrollBars.Vertical,
                 Text = BuildFieldBehaviorSummary(block.Configuration)
             };
@@ -4106,8 +4163,10 @@ namespace NameBuilderConfigurator
             }
 
             var lines = new List<string>();
-            var primaryLabel = string.IsNullOrWhiteSpace(config.Field) ? "Primary field" : config.Field;
-            lines.Add($"{primaryLabel} outputs when it has data.");
+            var primaryLabel = string.IsNullOrWhiteSpace(config.Field)
+                ? "primary field"
+                : FormatFieldLabel(config.Field);
+            lines.Add($"Use '{primaryLabel}' when not blank.");
 
             AppendFallbackSummary(config, lines);
 
@@ -4136,7 +4195,7 @@ namespace NameBuilderConfigurator
 
                 if (alternate != null && !string.IsNullOrWhiteSpace(alternate.Field))
                 {
-                    lines.Add($"If blank -> use {alternate.Field}.");
+                    lines.Add($"If blank -> use '{FormatFieldLabel(alternate.Field)}'.");
                     cursor = alternate;
                     continue;
                 }
@@ -4179,9 +4238,10 @@ namespace NameBuilderConfigurator
                 var comparison = condition.Operator;
                 if (!string.IsNullOrWhiteSpace(condition.Value))
                 {
-                    comparison += " \"" + condition.Value + "\"";
+                    var formattedValue = FormatOptionValue(condition.Field, condition.Value);
+                    comparison += " \"" + formattedValue + "\"";
                 }
-                segments.Add($"{condition.Field} {comparison}".Trim());
+                segments.Add($"{FormatFieldLabel(condition.Field)} {comparison}".Trim());
             }
 
             if (condition.AllOf != null && condition.AllOf.Count > 0)
