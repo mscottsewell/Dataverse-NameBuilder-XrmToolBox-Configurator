@@ -2886,7 +2886,14 @@ namespace NameBuilderConfigurator
                     };
                     var personalViews = Service.RetrieveMultiple(personalViewQuery).Entities;
                     
-                    args.Result = new { Attributes = attributes, PersonalViews = personalViews, SystemViews = systemViews, PrimaryNameAttribute = primaryNameAttribute, PrimaryNameMaxLength = primaryNameMaxLength };
+                    args.Result = new
+                    {
+                        Attributes = attributes,
+                        PersonalViews = personalViews ?? new EntityCollection().Entities,
+                        SystemViews = systemViews ?? new EntityCollection().Entities,
+                        PrimaryNameAttribute = primaryNameAttribute,
+                        PrimaryNameMaxLength = primaryNameMaxLength
+                    };
                 },
                 PostWorkCallBack = (args) =>
                 {
@@ -2988,7 +2995,9 @@ namespace NameBuilderConfigurator
                     viewDropdown.Enabled = viewDropdown.Items.Count > 0;
                     attributeListBox.Enabled = true;
                     RestoreViewSelectionFromPreferences();
-                    statusLabel.Text = $"Loaded {currentAttributes.Count} attributes, {result.Views.Count} views";
+                    var personalCount = (result.PersonalViews as EntityCollection)?.Entities?.Count ?? result.PersonalViews?.Count ?? 0;
+                    var systemCount = (result.SystemViews as EntityCollection)?.Entities?.Count ?? result.SystemViews?.Count ?? 0;
+                    statusLabel.Text = $"Loaded {currentAttributes.Count} attributes, {personalCount + systemCount} views";
 
                     TryApplyPendingConfiguration();
                 }
