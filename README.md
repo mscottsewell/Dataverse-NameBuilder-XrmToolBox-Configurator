@@ -38,6 +38,7 @@ NameBuilder Configurator is a WinForms-based XrmToolBox plug-in that:
 
 - 🔌 **Connection-aware startup** – Reuses your XrmToolBox connection, validates that the NameBuilder assembly exists, and surfaces hash mismatches before publishing.
 - 📋 **Solution-scoped entity browser** – Filter entities by Dataverse solution, load metadata and views, pick sample records, and double-click attributes to insert them.
+- 🎯 **Solution-based deployment** – Select an unmanaged solution to organize NameBuilder plugin assemblies and steps; prevents duplicate step registrations per entity.
 - ✨ **Visual block editor** – Manage ordered field blocks with drag handles (▲/▼), move buttons, deletion, and inline summaries showing configured properties.
 - ⚙️ **Reusable defaults** – Persist global prefix, suffix, number/date formats, and timezone offsets in `%APPDATA%\NameBuilderConfigurator\settings.json`; automatically propagate changes to untouched blocks.
 - 🧮 **Default-if-blank dialog** – Select alternate attributes or literal defaults from one dialog, backed by a read-only behavior summary in the property pane showing the fallback chain.
@@ -112,7 +113,7 @@ Every ribbon button, dropdown, and property control now exposes a tooltip—hove
 | --- | --- |
 | **Ribbon** | Load entities, retrieve configs, import/export/copy JSON, update the NameBuilder assembly, and publish. Tooltips summarize each command. |
 | **Solution dropdown** | Filter entities by Dataverse solution (optional). Display names shown; solution IDs stored for lookups. |
-| **Entity explorer** | Entity picker, optional view selector, sample record dropdown, and the Available Attributes list (double-click to add). |
+| **Entity explorer** | Entity picker, optional view selector (personal views first, separator, then system views), sample record dropdown, and the Available Attributes list (double-click to add). |
 | **Field blocks** | Ordered list with drag handles (▲/▼ buttons), delete icons, and inline summary showing attribute name, type, and key properties. |
 | **Properties tab** | Shows global settings (target field, max length, tracing, default prefix/suffix/format/timezone) when the entity header is selected; otherwise exposes field type, prefix/suffix, format, truncation, timezone, Default-if-blank button, includeIf button, and behavior summary. |
 | **JSON tab** | Read-only `Consolas` rendering of the generated payload. |
@@ -126,7 +127,7 @@ Every ribbon button, dropdown, and property control now exposes a tooltip—hove
 1. Connect to a Dataverse environment with the NameBuilder plug-in installed.
 2. (Optional) Select a **Solution** to filter the available entities list.
 3. Choose an **Entity** to configure the NameBuilder pattern for.
-4. (Optional) Choose a **View** to scope which sample records are loaded.
+4. (Optional) Choose a **View** to scope which sample records are loaded (personal views are listed first, followed by a separator, then system views).
 5. (Optional) Select a **Sample Record** from the view to see live preview updates.
 6. Double-click attributes in the **Available Attributes** list to create field blocks (type auto-detects but can be overridden).
 7. Click any field block to edit its properties: prefix/suffix, formats, truncation, timezone.
@@ -164,12 +165,16 @@ Need deeper schema detail? See [docs/USAGE.md](docs/USAGE.md) or the upstream Do
 ## Publishing & Deployment
 
 - The control confirms that the NameBuilder assembly exists when the connection updates. Use **Update NameBuilder Plug-in** to install/repair it.
+- **Solution selection**: When installing the plugin or publishing configurations, you'll be prompted to select an unmanaged solution. This ensures all NameBuilder components (assemblies and steps) are organized within your chosen solution for ALM workflows.
+- **Duplicate prevention**: The tool automatically detects existing steps for each entity/message combination and updates them rather than creating duplicates. If multiple steps exist, a diagnostic warning is logged.
+- **Component management**: Plugin assemblies and SDK message processing steps are automatically added to your selected solution if not already present.
 - Publishing synchronizes both the JSON (`configuration`) and `filteringattributes` columns on each selected `sdkmessageprocessingstep`.
 - Status updates and tooltips explain each operation (metadata load, publish success, errors, etc.).
 
 ## Settings & Persistence
 
 - `%APPDATA%\NameBuilderConfigurator\settings.json` stores splitter positions, preview height, default prefixes/suffixes/formats/timezones, and other UI preferences.
+- **Per-connection preferences**: Each connection remembers its selected plugin solution (ID and unique name) to streamline repeated deployments and maintain consistency.
 - Defaults propagate automatically to new blocks and can retroactively update existing ones that matched the prior default.
 - The plug-in caches local vs. Dataverse NameBuilder assembly hashes so you can see whether the server version matches your local DLL before publishing.
 

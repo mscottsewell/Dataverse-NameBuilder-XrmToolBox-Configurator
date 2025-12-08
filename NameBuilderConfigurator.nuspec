@@ -6,6 +6,7 @@
     <title>NameBuilder Configurator</title>
     <authors>Scott Sewell</authors>
     <owners>mScottSewell</owners>
+    <license type="expression">MIT</license>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <projectUrl>https://github.com/mscottsewell/Dataverse-NameBuilder-XrmToolBox-Configurator</projectUrl>
     <summary>Installation of the NameBuilder plugin https://github.com/mscottsewell/Dataverse-NameBuilder is required for use.</summary>
@@ -23,5 +24,6 @@
     <file src="Assets\**\*.*" target="content\Plugins\NameBuilderConfigurator\Assets\" />
     <file src="Assets\Icon\NameBuilder_80x80.png" target="icon.png" />
     <file src="README.md" target="README.md" />
+    <file src="LICENSE" target="LICENSE" />
   </files>
 </package>

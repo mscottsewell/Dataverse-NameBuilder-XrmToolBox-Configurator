@@ -42,7 +42,9 @@ Restart XrmToolBox and the plug-in appears in the tool list.
 
 1. Use the XrmToolBox connection wizard as normal.
 2. When the control loads, it automatically runs a WorkAsync job that queries `pluginassembly` for "NameBuilder". If the plug-in (or its `plugintype` entries) is missing, the tool surfaces a blocking dialog instructing you to install the server component first.
-3. Once validated, the utility caches the located `plugintype` so it can query/update the corresponding `sdkmessageprocessingstep` rows when you publish configuration changes.
+3. **Solution Selection for Plugin Installation**: When installing or updating the NameBuilder plugin assembly, you'll be prompted to select an unmanaged solution. Only unmanaged solutions are shown to ensure compatibility with ALM workflows. Your selection is saved per connection.
+4. Once validated, the utility caches the located `plugintype` so it can query/update the corresponding `sdkmessageprocessingstep` rows when you publish configuration changes.
+5. **Component Organization**: All plugin components (assemblies and SDK message processing steps) are automatically added to your selected solution, enabling proper solution layering and transport between environments.
 
 ## 5. UI Tour & Core Concepts
 
@@ -51,7 +53,7 @@ Restart XrmToolBox and the plug-in appears in the tool list.
 | **Ribbon** | Top toolbar with buttons: Load Entities (reload metadata), Retrieve Configuration (pull from Dataverse), Register Plug-in (verify/deploy), Import JSON, Export JSON, Copy JSON, and Publish Configuration. Hover over each button for a tooltip. |
 | **Solution Dropdown** | Optional filter to scope entities to a specific Dataverse solution. Display names are shown; selecting a solution loads only entities in that solution. Choose "(Default)" to see all entities. |
 | **Entity Dropdown** | Select the Dataverse entity whose NameBuilder pattern you want to edit. Populates from the filtered solution or all available entities. |
-| **View Dropdown** | Optional system or personal view selector. When set, the Sample Record dropdown only shows rows from that view. Leave blank to show all records. |
+| **View Dropdown** | Optional view selector. Personal views are listed first, then a separator, then system views. The separator is non-selectable. When set, the Sample Record dropdown only shows rows from that view. Leave blank to show all records. |
 | **Sample Record Dropdown** | Pick a row to feed the live preview. Records come from the selected view (or all rows if no view is chosen). As you change the sample record, the preview updates in real-time. |
 | **Available Attributes List** | Shows all attributes from the selected entity. Double-click any attribute to append it as a field block; logical name shown in parentheses below display name. |
 | **Field Blocks Panel** | Center area showing ordered field blocks. Each block displays the attribute name, type, and key properties (prefix/suffix/format if configured). Click a block to edit it; drag ▲/▼ buttons to reorder; click ✕ to delete. |
@@ -104,7 +106,7 @@ The property pane now explains the evaluation order via the behavior summary box
 2. **Load Entities** by clicking the ribbon button (metadata and views load automatically). This fetches all solutions, entities, views, and sample records from Dataverse.
 3. (Optional) **Filter by Solution** using the Solution dropdown to narrow the entity list.
 4. **Choose an Entity** from the Entity dropdown to begin configuring its NameBuilder pattern.
-5. (Optional) **Choose a View** to restrict which sample records appear in the Sample Record dropdown.
+5. (Optional) **Choose a View** to restrict which sample records appear in the Sample Record dropdown. Personal views are listed first; a non-selectable separator precedes the system views.
 6. (Optional) **Pick a Sample Record** to seed the live preview with real data as you build.
 7. **Add Field Blocks** by double-clicking attributes in the **Available Attributes** list. Field type auto-detects based on metadata but can be overridden in properties.
 8. (Optional) **Adjust Global Properties**: Click the entity header block to show **Global Configuration**, then set target field, max length, enable tracing, and default prefix/suffix/formats.
@@ -117,6 +119,8 @@ The property pane now explains the evaluation order via the behavior summary box
 10. **Monitor Live Preview** as you build to ensure output matches expectations.
 11. **Validate JSON** by switching to the JSON tab to inspect the schema (copy/export if needed for offline review).
 12. **Publish** back to Dataverse or **Export/Copy** the JSON for later use.
+
+**Solution Selection for Publishing**: When you click **Publish Configuration** for the first time (or after the plugin is installed), you'll be prompted to select an unmanaged solution where the NameBuilder steps will be registered. This selection is remembered per connection for future publishes. The tool ensures only one Create step and one Update step exist per entity, updating existing steps rather than creating duplicates.
 
 ### 6.2 Import existing JSON
 
@@ -241,6 +245,8 @@ Defaults are applied automatically when new blocks are created but can also be m
 | Publish button is disabled | Ensure: (1) an entity is selected, (2) at least one field block exists, (3) the NameBuilder plug-in is registered (use **Register Plug-in**). |
 | JSON import errors | Validate the file against the schema in the [Dataverse-NameBuilder Docs](https://github.com/mscottsewell/Dataverse-NameBuilder/tree/main/Docs) folder. The configurator expects exact property names and casing (e.g., `targetField`, not `targetfield`). |
 | Publish fails | Check that: (1) you have Create/Update step registrations for the entity, (2) your connection has privileges to update `sdkmessageprocessingstep` rows, (3) the target field exists on the entity. Enable tracing in Global Configuration to capture plug-in-side diagnostics. |
+| Multiple steps exist for the same entity | The tool will detect and update the first existing step, logging a diagnostic warning. Review your environment for duplicate NameBuilder steps and remove extras manually via the Plugin Registration Tool. |
+| Solution selection not appearing | Verify at least one unmanaged solution exists in your environment. Managed solutions cannot contain new plugin registrations and are filtered from the selection dialog. |
 | Truncation not working as expected | Verify `maxLength` is set on the global config or individual field, and `truncationIndicator` (default `...`) is configured. Test with a sample record that exceeds the limit. |
 | Timezone offset not applied | Verify the field type is `date` or `datetime` and `timezoneOffsetHours` is set on the field (not 0). Timezone adjustments only apply to date/time types. |
 | Missing attributes in the Available Attributes list | Click **Load Entities** to refresh metadata. Some attributes may be hidden or marked as non-searchable in metadata; these still appear in the list but may not be queryable. |

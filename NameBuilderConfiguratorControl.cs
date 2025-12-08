@@ -377,6 +377,7 @@ namespace NameBuilderConfigurator
                         ColumnSet = new ColumnSet("solutionid", "friendlyname", "uniquename", "ismanaged", "isvisible"),
                         Orders = { new OrderExpression("friendlyname", OrderType.Ascending) }
                     };
+                    query.Criteria.AddCondition("ismanaged", ConditionOperator.Equal, false);
 
                     args.Result = Service.RetrieveMultiple(query).Entities;
                 },
@@ -400,7 +401,6 @@ namespace NameBuilderConfigurator
                             UniqueName = e.GetAttributeValue<string>("uniquename"),
                             IsManaged = e.GetAttributeValue<bool?>("ismanaged") ?? false
                         })
-                        .OrderBy(s => s.FriendlyName, StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
                     if (solutions.Count == 0)
@@ -414,10 +414,23 @@ namespace NameBuilderConfigurator
                         });
                     }
 
+                    // Sort with Default Solution first, then alphabetically
                     var defaultIndex = solutions.FindIndex(IsDefaultSolution);
-                    if (defaultIndex > 0)
+                    if (defaultIndex >= 0)
                     {
-                        var defaults = solutions[defaultIndex];
+                        var defaultSolution = solutions[defaultIndex];
+                        solutions.RemoveAt(defaultIndex);
+                        solutions.Insert(0, defaultSolution);
+                    }
+                    else
+                    {
+                        solutions.Sort((a, b) => a.FriendlyName.CompareTo(b.FriendlyName));
+                    }
+
+                    var defaultIndex2 = solutions.FindIndex(IsDefaultSolution);
+                    if (defaultIndex2 > 0)
+                    {
+                        var defaults = solutions[defaultIndex2];
                         solutions.RemoveAt(defaultIndex);
                         solutions.Insert(0, defaults);
                     }
@@ -751,12 +764,12 @@ namespace NameBuilderConfigurator
             if (preference?.LastViewId != null)
             {
                 target = viewDropdown.Items.Cast<ViewItem>()
-                    .FirstOrDefault(v => v.ViewId == preference.LastViewId.Value);
+                    .FirstOrDefault(v => v.ViewId == preference.LastViewId.Value && !v.IsSeparator);
             }
 
             if (target == null)
             {
-                target = (ViewItem)viewDropdown.Items[0];
+                target = viewDropdown.Items.Cast<ViewItem>().FirstOrDefault(v => !v.IsSeparator);
             }
 
             if (target == null)
@@ -1518,12 +1531,27 @@ namespace NameBuilderConfigurator
             {
                 if (dialog.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedAssemblyPath))
                 {
-                    StartPluginInstallation(dialog.SelectedAssemblyPath);
+                    var preference = GetConnectionPreference();
+                    var solutionId = preference?.PluginSolutionId;
+
+                    using (var solutionDialog = new PluginSolutionSelectionDialog(solutions, solutionId))
+                    {
+                        if (solutionDialog.ShowDialog(this) == DialogResult.OK)
+                        {
+                            PersistConnectionPreference(pref =>
+                            {
+                                pref.PluginSolutionId = solutionDialog.SelectedSolutionId;
+                                pref.PluginSolutionUniqueName = solutionDialog.SelectedSolutionUniqueName;
+                            });
+
+                            StartPluginInstallation(dialog.SelectedAssemblyPath, solutionDialog.SelectedSolutionId);
+                        }
+                    }
                 }
             }
         }
 
-        private void StartPluginInstallation(string assemblyPath, Action postInstallContinuation = null)
+        private void StartPluginInstallation(string assemblyPath, Guid? solutionId, Action postInstallContinuation = null)
         {
             if (string.IsNullOrWhiteSpace(assemblyPath) || !File.Exists(assemblyPath))
             {
@@ -1538,12 +1566,19 @@ namespace NameBuilderConfigurator
             WorkAsync(new WorkAsyncInfo
             {
                 Message = "Registering NameBuilder plug-in...",
-                AsyncArgument = assemblyPath,
+                AsyncArgument = new { Path = assemblyPath, SolutionId = solutionId },
                 Work = (worker, args) =>
                 {
-                    var path = (string)args.Argument;
+                    dynamic arg = args.Argument;
                     var installer = new PluginAssemblyInstaller(Service);
-                    args.Result = installer.InstallOrUpdate(path);
+                    var result = installer.InstallOrUpdate(arg.Path);
+                    
+                    if (arg.SolutionId != null && arg.SolutionId != Guid.Empty)
+                    {
+                        AddPluginComponentsToSolution(result.AssemblyId, arg.SolutionId);
+                    }
+                    
+                    args.Result = result;
                 },
                 PostWorkCallBack = (args) =>
                 {
@@ -1686,6 +1721,111 @@ namespace NameBuilderConfigurator
             return null;
         }
 
+        private void AddPluginComponentsToSolution(Guid assemblyId, Guid solutionId)
+        {
+            if (assemblyId == Guid.Empty || solutionId == Guid.Empty)
+            {
+                return;
+            }
+
+            // Check if assembly is already in solution
+            var checkQuery = new QueryExpression("solutioncomponent")
+            {
+                ColumnSet = new ColumnSet("solutioncomponentid"),
+                Criteria = new FilterExpression
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression("solutionid", ConditionOperator.Equal, solutionId),
+                        new ConditionExpression("objectid", ConditionOperator.Equal, assemblyId),
+                        new ConditionExpression("componenttype", ConditionOperator.Equal, 91) // PluginAssembly
+                    }
+                },
+                TopCount = 1
+            };
+
+            var existingComponent = Service.RetrieveMultiple(checkQuery).Entities.FirstOrDefault();
+            if (existingComponent != null)
+            {
+                return; // Already in solution
+            }
+
+            // Add assembly to solution
+            var addRequest = new OrganizationRequest("AddSolutionComponent")
+            {
+                ["ComponentId"] = assemblyId,
+                ["ComponentType"] = 91, // PluginAssembly
+                ["SolutionUniqueName"] = GetSolutionUniqueName(solutionId),
+                ["AddRequiredComponents"] = false
+            };
+
+            Service.Execute(addRequest);
+        }
+
+        private void AddStepToSolution(Guid stepId, Guid? solutionId)
+        {
+            if (stepId == Guid.Empty || !solutionId.HasValue || solutionId.Value == Guid.Empty)
+            {
+                return;
+            }
+
+            // Check if step is already in solution
+            var checkQuery = new QueryExpression("solutioncomponent")
+            {
+                ColumnSet = new ColumnSet("solutioncomponentid"),
+                Criteria = new FilterExpression
+                {
+                    Conditions =
+                    {
+                        new ConditionExpression("solutionid", ConditionOperator.Equal, solutionId.Value),
+                        new ConditionExpression("objectid", ConditionOperator.Equal, stepId),
+                        new ConditionExpression("componenttype", ConditionOperator.Equal, 92) // SDKMessageProcessingStep
+                    }
+                },
+                TopCount = 1
+            };
+
+            var existingComponent = Service.RetrieveMultiple(checkQuery).Entities.FirstOrDefault();
+            if (existingComponent != null)
+            {
+                return; // Already in solution
+            }
+
+            // Add step to solution
+            var addRequest = new OrganizationRequest("AddSolutionComponent")
+            {
+                ["ComponentId"] = stepId,
+                ["ComponentType"] = 92, // SDKMessageProcessingStep
+                ["SolutionUniqueName"] = GetSolutionUniqueName(solutionId.Value),
+                ["AddRequiredComponents"] = false
+            };
+
+            Service.Execute(addRequest);
+        }
+
+        private string GetSolutionUniqueName(Guid solutionId)
+        {
+            var solution = solutions?.FirstOrDefault(s => s.SolutionId == solutionId);
+            if (solution != null && !string.IsNullOrWhiteSpace(solution.UniqueName))
+            {
+                return solution.UniqueName;
+            }
+
+            // Fallback: query from Dataverse
+            var query = new QueryExpression("solution")
+            {
+                ColumnSet = new ColumnSet("uniquename"),
+                Criteria = new FilterExpression
+                {
+                    Conditions = { new ConditionExpression("solutionid", ConditionOperator.Equal, solutionId) }
+                },
+                TopCount = 1
+            };
+
+            var solutionEntity = Service.RetrieveMultiple(query).Entities.FirstOrDefault();
+            return solutionEntity?.GetAttributeValue<string>("uniquename");
+        }
+
         private void LoadEntitiesButton_Click(object sender, EventArgs e)
         {
             if (Service == null)
@@ -1778,6 +1918,36 @@ namespace NameBuilderConfigurator
                     return;
                 }
 
+                var preference = GetConnectionPreference();
+                var solutionId = preference?.PluginSolutionId;
+                var selectedSolutionItem = preference != null
+                    ? solutions?.FirstOrDefault(s => s.SolutionId == solutionId)
+                    : null;
+
+                Guid? finalSolutionId = solutionId;
+                string finalSolutionUniqueName = preference?.PluginSolutionUniqueName;
+
+                // Only prompt if Default Solution is selected or no solution is set yet
+                if (!solutionId.HasValue || IsDefaultSolution(selectedSolutionItem))
+                {
+                    using (var solutionDialog = new PluginSolutionSelectionDialog(solutions, solutionId))
+                    {
+                        if (solutionDialog.ShowDialog(this) != DialogResult.OK)
+                        {
+                            return;
+                        }
+
+                        finalSolutionId = solutionDialog.SelectedSolutionId;
+                        finalSolutionUniqueName = solutionDialog.SelectedSolutionUniqueName;
+
+                        PersistConnectionPreference(pref =>
+                        {
+                            pref.PluginSolutionId = finalSolutionId;
+                            pref.PluginSolutionUniqueName = finalSolutionUniqueName;
+                        });
+                    }
+                }
+
                 var context = new PublishContext
                 {
                     PluginTypeId = activePluginType.PluginTypeId,
@@ -1787,7 +1957,8 @@ namespace NameBuilderConfigurator
                     JsonPayload = json,
                     AttributeNames = attributeSet.ToList(),
                     PublishInsert = dialog.PublishInsert,
-                    PublishUpdate = dialog.PublishUpdate
+                    PublishUpdate = dialog.PublishUpdate,
+                    SolutionId = finalSolutionId
                 };
 
                 publishToolButton.Enabled = false;
@@ -1795,55 +1966,56 @@ namespace NameBuilderConfigurator
                 var publishContext = context;
 
                 WorkAsync(new WorkAsyncInfo
-                {
-                    Message = "Publishing configuration...",
-                    AsyncArgument = publishContext,
-                    Work = (worker, args) =>
                     {
-                        var ctx = (PublishContext)args.Argument;
-                        args.Result = ExecutePublish(ctx);
-                    },
-                    PostWorkCallBack = (args) =>
-                    {
-                        SetActiveRegistryStep(activeRegistryStep);
-
-                        if (args.Error != null)
+                        Message = "Publishing configuration...",
+                        AsyncArgument = publishContext,
+                        Work = (worker, args) =>
                         {
-                            ShowPublishError(args.Error);
-                            return;
-                        }
-
-                        var ctx = publishContext;
-                        if (args.Result is PublishResult publishResult)
+                            var ctx = (PublishContext)args.Argument;
+                            args.Result = ExecutePublish(ctx);
+                        },
+                        PostWorkCallBack = (args) =>
                         {
-                            UpdateCachedStepsAfterPublish(publishResult);
+                            publishToolButton.Enabled = true;
+                            SetActiveRegistryStep(activeRegistryStep);
 
-                            if (activeRegistryStep != null)
+                            if (args.Error != null)
                             {
-                                activeRegistryStep.UnsecureConfiguration = ctx.JsonPayload;
-                                if (publishResult.StepMetadata != null)
+                                ShowPublishError(args.Error);
+                                return;
+                            }
+
+                            var ctx = publishContext;
+                            if (args.Result is PublishResult publishResult)
+                            {
+                                UpdateCachedStepsAfterPublish(publishResult);
+
+                                if (activeRegistryStep != null)
                                 {
-                                    var updated = publishResult.StepMetadata
-                                        .FirstOrDefault(s => s.StepId == activeRegistryStep.StepId);
-                                    if (updated != null)
+                                    activeRegistryStep.UnsecureConfiguration = ctx.JsonPayload;
+                                    if (publishResult.StepMetadata != null)
                                     {
-                                        activeRegistryStep.FilteringAttributes = updated.FilteringAttributes;
+                                        var updated = publishResult.StepMetadata
+                                            .FirstOrDefault(s => s.StepId == activeRegistryStep.StepId);
+                                        if (updated != null)
+                                        {
+                                            activeRegistryStep.FilteringAttributes = updated.FilteringAttributes;
+                                        }
                                     }
                                 }
-                            }
 
-                            if (publishResult.UpdatedSteps.Count > 0)
-                            {
-                                statusLabel.Text = $"Published to: {string.Join(", ", publishResult.UpdatedSteps)}";
+                                if (publishResult.UpdatedSteps.Count > 0)
+                                {
+                                    statusLabel.Text = $"Published to: {string.Join(", ", publishResult.UpdatedSteps)}";
+                                }
+                                else
+                                {
+                                    statusLabel.Text = "Configuration published.";
+                                }
+                                statusLabel.ForeColor = Color.ForestGreen;
                             }
-                            else
-                            {
-                                statusLabel.Text = "Configuration published.";
-                            }
-                            statusLabel.ForeColor = Color.ForestGreen;
                         }
-                    }
-                });
+                    });
             }
         }
 
@@ -2681,8 +2853,8 @@ namespace NameBuilderConfigurator
                         }
                     }
                     
-                    // Load views
-                    var viewQuery = new QueryExpression("savedquery")
+                    // Load system views
+                    var systemViewQuery = new QueryExpression("savedquery")
                     {
                         ColumnSet = new ColumnSet("name", "savedqueryid", "layoutxml", "fetchxml"),
                         Criteria = new FilterExpression
@@ -2690,15 +2862,31 @@ namespace NameBuilderConfigurator
                             Conditions =
                             {
                                 new ConditionExpression("returnedtypecode", ConditionOperator.Equal, entityLogicalName),
-                                new ConditionExpression("querytype", ConditionOperator.Equal, 0), // Public views
+                                new ConditionExpression("querytype", ConditionOperator.Equal, 0), // Public/system views
                                 new ConditionExpression("statecode", ConditionOperator.Equal, 0)
                             }
                         },
                         Orders = { new OrderExpression("name", OrderType.Ascending) }
                     };
-                    var views = Service.RetrieveMultiple(viewQuery).Entities;
+                    var systemViews = Service.RetrieveMultiple(systemViewQuery).Entities;
+
+                    // Load personal views
+                    var personalViewQuery = new QueryExpression("userquery")
+                    {
+                        ColumnSet = new ColumnSet("name", "userqueryid", "layoutxml", "fetchxml"),
+                        Criteria = new FilterExpression
+                        {
+                            Conditions =
+                            {
+                                new ConditionExpression("returnedtypecode", ConditionOperator.Equal, entityLogicalName),
+                                new ConditionExpression("statecode", ConditionOperator.Equal, 0)
+                            }
+                        },
+                        Orders = { new OrderExpression("name", OrderType.Ascending) }
+                    };
+                    var personalViews = Service.RetrieveMultiple(personalViewQuery).Entities;
                     
-                    args.Result = new { Attributes = attributes, Views = views, PrimaryNameAttribute = primaryNameAttribute, PrimaryNameMaxLength = primaryNameMaxLength };
+                    args.Result = new { Attributes = attributes, PersonalViews = personalViews, SystemViews = systemViews, PrimaryNameAttribute = primaryNameAttribute, PrimaryNameMaxLength = primaryNameMaxLength };
                 },
                 PostWorkCallBack = (args) =>
                 {
@@ -2766,17 +2954,34 @@ namespace NameBuilderConfigurator
                         });
                     }
                     
-                    // Populate view dropdown
+                    // Populate view dropdown: personal views first, separator, then system views
                     viewDropdown.Items.Clear();
                     viewDropdown.Items.Add(new ViewItem { Name = "(All Attributes)", ViewId = Guid.Empty });
-                    
-                    foreach (Entity view in result.Views)
+
+                    foreach (Entity view in result.PersonalViews)
                     {
                         viewDropdown.Items.Add(new ViewItem
                         {
                             Name = view.GetAttributeValue<string>("name"),
                             ViewId = view.Id,
-                            View = view
+                            View = view,
+                            IsPersonal = true
+                        });
+                    }
+
+                    if (result.PersonalViews != null && result.PersonalViews.Count > 0 && result.SystemViews != null && result.SystemViews.Count > 0)
+                    {
+                        viewDropdown.Items.Add(new ViewItem { Name = "— System Views —", ViewId = Guid.Empty, IsSeparator = true });
+                    }
+
+                    foreach (Entity view in result.SystemViews)
+                    {
+                        viewDropdown.Items.Add(new ViewItem
+                        {
+                            Name = view.GetAttributeValue<string>("name"),
+                            ViewId = view.Id,
+                            View = view,
+                            IsPersonal = false
                         });
                     }
 
@@ -2809,7 +3014,23 @@ namespace NameBuilderConfigurator
 
             var selectedView = (ViewItem)viewDropdown.SelectedItem;
 
-            PersistConnectionPreference(pref => pref.LastViewId = selectedView.ViewId);
+            if (selectedView.IsSeparator)
+            {
+                suppressViewSelectionChanged = true;
+                var newIndex = Math.Min(viewDropdown.Items.Count - 1, viewDropdown.SelectedIndex + 1);
+                if (newIndex == viewDropdown.SelectedIndex && viewDropdown.SelectedIndex > 0)
+                {
+                    newIndex = viewDropdown.SelectedIndex - 1;
+                }
+                viewDropdown.SelectedIndex = newIndex;
+                suppressViewSelectionChanged = false;
+                return;
+            }
+
+            if (!selectedView.IsSeparator)
+            {
+                PersistConnectionPreference(pref => pref.LastViewId = selectedView.ViewId);
+            }
 
             sampleRecordDropdown.Items.Clear();
             sampleRecordDropdown.Enabled = false;
@@ -3587,19 +3808,66 @@ namespace NameBuilderConfigurator
             propertiesPanel.Controls.Add(propertiesTitleLabel);
             
             int y = 45;
-            
-            // Target Field
+
+            // Row 1: Plugin Solution (full width)
+            var solutionLabel = new System.Windows.Forms.Label
+            {
+                Text = "Plugin Solution:",
+                Location = new Point(10, y + 3),
+                Size = new Size(120, 23),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            var solutionCombo = new ComboBox
+            {
+                Location = new Point(140, y),
+                Size = new Size(220, 23),
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            var availableSolutions = solutions ?? new List<SolutionItem>();
+            foreach (var sol in availableSolutions)
+            {
+                solutionCombo.Items.Add(sol);
+            }
+            var preference = GetConnectionPreference();
+            var preferredSolutionId = preference?.PluginSolutionId;
+            if (preferredSolutionId.HasValue)
+            {
+                var selected = availableSolutions.FirstOrDefault(s => s.SolutionId == preferredSolutionId.Value);
+                if (selected != null)
+                {
+                    solutionCombo.SelectedItem = selected;
+                }
+            }
+            if (solutionCombo.SelectedIndex == -1 && solutionCombo.Items.Count > 0)
+            {
+                solutionCombo.SelectedIndex = 0;
+            }
+            helpToolTip?.SetToolTip(solutionCombo, "Select the unmanaged solution where NameBuilder plugin assemblies and steps should live.");
+            solutionCombo.SelectedIndexChanged += (s, e) =>
+            {
+                var selected = solutionCombo.SelectedItem as SolutionItem;
+                PersistConnectionPreference(pref =>
+                {
+                    pref.PluginSolutionId = selected?.SolutionId;
+                    pref.PluginSolutionUniqueName = selected?.UniqueName;
+                });
+            };
+            propertiesPanel.Controls.AddRange(new Control[] { solutionLabel, solutionCombo });
+            y += 40;
+
+            // Row 2: Target Field Name (full width)
             var targetLabel = new System.Windows.Forms.Label
             {
                 Text = "Target Field Name:",
-                Location = new Point(10, y),
-                AutoSize = true
+                Location = new Point(10, y + 3),
+                Size = new Size(120, 23),
+                TextAlign = ContentAlignment.MiddleLeft
             };
             var targetTextBox = new TextBox
             {
                 Text = targetFieldTextBox.Text,
-                Location = new Point(10, y + 20),
-                Size = new Size(250, 23)
+                Location = new Point(140, y),
+                Size = new Size(220, 23)
             };
             helpToolTip?.SetToolTip(targetTextBox, "Logical name of the destination column (defaults to name). This becomes targetField in JSON.");
             targetTextBox.TextChanged += (s, e) => {
@@ -3607,38 +3875,54 @@ namespace NameBuilderConfigurator
                 GenerateJsonAndPreview();
             };
             propertiesPanel.Controls.AddRange(new Control[] { targetLabel, targetTextBox });
-            y += 55;
-            
-            // Max Length
+            y += 40;
+
+            // Row 3: Global Max Length + Enable Tracing
             var maxLabel = new System.Windows.Forms.Label
             {
-                Text = "Global Max Length (0 = no limit):",
-                Location = new Point(10, y),
-                AutoSize = true
+                Text = "Global Max Length:",
+                Location = new Point(10, y + 3),
+                Size = new Size(120, 23),
+                TextAlign = ContentAlignment.MiddleLeft
             };
             var maxNumeric = new NumericUpDown
             {
                 Name = "GlobalMaxLengthNumeric",
-                Location = new Point(10, y + 20),
-                Size = new Size(100, 23),
+                Location = new Point(140, y),
+                Size = new Size(80, 23),
                 Minimum = 0,
                 Maximum = 100000,
                 Value = maxLengthNumeric.Value
+            };
+            var maxHintLabel = new System.Windows.Forms.Label
+            {
+                Text = "(0 = no limit)",
+                Location = new Point(140, y + 26),
+                AutoSize = true,
+                ForeColor = Color.Gray,
+                Font = new Font("Segoe UI", 8F)
             };
             helpToolTip?.SetToolTip(maxNumeric, "Optional length cap applied to the final string. Set to 0 for unlimited.");
             maxNumeric.ValueChanged += (s, e) => {
                 maxLengthNumeric.Value = maxNumeric.Value;
                 GenerateJsonAndPreview();
             };
-            propertiesPanel.Controls.AddRange(new Control[] { maxLabel, maxNumeric });
-            y += 55;
-            
-            // Enable Tracing
+
+            // Vertical separator
+            var separatorBar = new System.Windows.Forms.Label
+            {
+                BorderStyle = BorderStyle.Fixed3D,
+                Width = 2,
+                Height = 23,
+                    Location = new Point(225, y),
+                BackColor = Color.LightGray
+            };
+
             var traceCheckBox = new CheckBox
             {
                 Text = "Enable Tracing",
                 Checked = enableTracingCheckBox.Checked,
-                Location = new Point(10, y),
+                    Location = new Point(235, y + 3),
                 AutoSize = true
             };
             helpToolTip?.SetToolTip(traceCheckBox, "When enabled, the NameBuilder plug-in writes verbose traces to the Dataverse Plug-in Trace Log.");
@@ -3646,8 +3930,9 @@ namespace NameBuilderConfigurator
                 enableTracingCheckBox.Checked = traceCheckBox.Checked;
                 GenerateJsonAndPreview();
             };
-            propertiesPanel.Controls.Add(traceCheckBox);
-            y += 40;
+
+            propertiesPanel.Controls.AddRange(new Control[] { maxLabel, maxNumeric, maxHintLabel, separatorBar, traceCheckBox });
+            y += 55;
             
             // Horizontal separator line
             var separatorLine = new System.Windows.Forms.Label
@@ -4597,6 +4882,11 @@ namespace NameBuilderConfigurator
                 {
                     result.UpdatedSteps.Add(insertStep.Name ?? $"{context.EntityDisplayName} Create");
                     result.StepMetadata.Add(insertStep);
+                    
+                    if (context.SolutionId.HasValue)
+                    {
+                        AddStepToSolution(insertStep.StepId, context.SolutionId);
+                    }
                 }
             }
 
@@ -4607,6 +4897,11 @@ namespace NameBuilderConfigurator
                 {
                     result.UpdatedSteps.Add(updateStep.Name ?? $"{context.EntityDisplayName} Update");
                     result.StepMetadata.Add(updateStep);
+                    
+                    if (context.SolutionId.HasValue)
+                    {
+                        AddStepToSolution(updateStep.StepId, context.SolutionId);
+                    }
                 }
             }
 
@@ -4681,7 +4976,16 @@ namespace NameBuilderConfigurator
                 }
             };
 
-            var entity = Service.RetrieveMultiple(query).Entities.FirstOrDefault();
+            var entities = Service.RetrieveMultiple(query).Entities;
+            
+            // If multiple steps exist for the same entity/message combination, use the first one and log a warning
+            if (entities.Count > 1)
+            {
+                DiagnosticLog.LogWarning("Find Existing Step", 
+                    $"Found {entities.Count} NameBuilder steps for {entityLogicalName}/{messageName}. Using the first one. Consider cleaning up duplicate steps.");
+            }
+            
+            var entity = entities.FirstOrDefault();
             return entity == null ? null : BuildPluginStepInfoFromEntity(entity, messageName, filterId);
         }
 
@@ -6138,16 +6442,6 @@ namespace NameBuilderConfigurator
             }
         }
 
-        private class SolutionItem
-        {
-            public Guid SolutionId { get; set; }
-            public string FriendlyName { get; set; }
-            public string UniqueName { get; set; }
-            public bool IsManaged { get; set; }
-
-            public override string ToString() => string.IsNullOrWhiteSpace(FriendlyName) ? UniqueName : FriendlyName;
-        }
-
         private class SolutionComponentLoadResult
         {
             public Guid SolutionId { get; set; }
@@ -6171,6 +6465,7 @@ namespace NameBuilderConfigurator
             public List<string> AttributeNames { get; set; }
             public bool PublishInsert { get; set; }
             public bool PublishUpdate { get; set; }
+            public Guid? SolutionId { get; set; }
         }
 
         private class PublishResult
@@ -6202,6 +6497,8 @@ namespace NameBuilderConfigurator
             public string Name { get; set; }
             public Guid ViewId { get; set; }
             public Entity View { get; set; }
+            public bool IsPersonal { get; set; }
+            public bool IsSeparator { get; set; }
 
             public override string ToString() => Name;
         }
@@ -6367,6 +6664,8 @@ class ConnectionPreference
     public string LastSolutionUniqueName { get; set; }
     public string LastEntityLogicalName { get; set; }
     public Guid? LastViewId { get; set; }
+    public Guid? PluginSolutionId { get; set; }
+    public string PluginSolutionUniqueName { get; set; }
 }
 
 
