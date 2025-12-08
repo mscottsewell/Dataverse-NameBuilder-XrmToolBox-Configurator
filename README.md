@@ -153,6 +153,10 @@ Every ribbon button, dropdown, and property control now exposes a tooltip—hove
 1. Click **Publish Configuration**.
 2. Select whether to update the Create step, Update step, or both.
 3. The tool writes the JSON + filtering attributes and reports the touched steps in the status bar.
+4. The selected **Plugin Solution** will be updated with the plugin and the steps.
+<img width="1591" height="1038" alt="image" src="https://github.com/user-attachments/assets/24c1242c-0823-43f4-ac07-8341c052c7f6" />
+<img width="1275" height="595" alt="image" src="https://github.com/user-attachments/assets/abbead87-396f-494b-8dbc-490a9ad5d9f1" />
+
 
 ## Defaults, Fallbacks, and Conditions
 
