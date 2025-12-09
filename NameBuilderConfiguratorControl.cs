@@ -67,11 +67,17 @@ namespace NameBuilderConfigurator
         private string currentEntityLogicalName = null;
         private string currentEntityDisplayName = null;
         private string currentPrimaryNameAttribute = null;
+        private string committedConfigJson;
+        private string committedEntityLogicalName;
+        private EntityItem lastSelectedEntityItem;
         private PluginConfiguration pendingConfigFromPlugin;
         private string pendingConfigTargetEntity;
         private PluginStepInfo pendingConfigSourceStep;
         private PluginStepInfo activeRegistryStep;
         private PluginTypeInfo activePluginType;
+        private string pendingAutoLoadEntity;
+        private bool autoLoadInProgress;
+        private readonly HashSet<string> autoLoadAttemptedEntities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private List<PluginStepInfo> cachedPluginSteps = new List<PluginStepInfo>();
         private bool suppressBlockSelection;
         private readonly Dictionary<string, Dictionary<Guid, Entity>> sampleRecordCache = new Dictionary<string, Dictionary<Guid, Entity>>(StringComparer.OrdinalIgnoreCase);
@@ -169,6 +175,7 @@ namespace NameBuilderConfigurator
             if (!ReferenceEquals(detail, lastConnectionDetail))
             {
                 lastConnectionDetail = detail;
+                MigrateLegacyPreferenceKey();
                 pluginPresenceVerified = false;
                 cachedPluginSteps.Clear();
                 activePluginType = null;
@@ -287,6 +294,12 @@ namespace NameBuilderConfigurator
             currentSolutionId = null;
             solutionsLoading = false;
             pendingEntityRefreshAfterSolutions = false;
+            pendingAutoLoadEntity = null;
+            autoLoadAttemptedEntities.Clear();
+            autoLoadInProgress = false;
+            committedConfigJson = null;
+            committedEntityLogicalName = null;
+            lastSelectedEntityItem = null;
             ClearSampleRecordCache();
 
             if (solutionDropdown != null)
@@ -786,13 +799,38 @@ namespace NameBuilderConfigurator
 
         private ConnectionPreference GetConnectionPreference()
         {
-            var key = GetConnectionPreferenceKey();
-            if (string.IsNullOrWhiteSpace(key))
+            var settings = PluginUserSettings.Load();
+            var candidates = GetPreferenceKeyCandidates();
+
+            string foundKey = null;
+            ConnectionPreference found = null;
+
+            foreach (var candidate in candidates)
             {
-                return null;
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    continue;
+                }
+
+                var pref = settings.GetConnectionPreference(candidate);
+                if (pref != null)
+                {
+                    found = pref;
+                    foundKey = candidate;
+                    break;
+                }
             }
 
-            return PluginUserSettings.Load().GetConnectionPreference(key);
+            var primaryKey = GetConnectionPreferenceKey();
+            if (found != null && !string.IsNullOrWhiteSpace(primaryKey) && !string.Equals(foundKey, primaryKey, StringComparison.Ordinal))
+            {
+                // Migrate to the primary key for future lookups
+                settings.ConnectionPreferences[primaryKey] = found;
+                settings.ConnectionPreferences.Remove(foundKey);
+                settings.Save();
+            }
+
+            return found;
         }
 
         private void PersistConnectionPreference(Action<ConnectionPreference> apply)
@@ -802,14 +840,14 @@ namespace NameBuilderConfigurator
                 return;
             }
 
-            var key = GetConnectionPreferenceKey();
-            if (string.IsNullOrWhiteSpace(key))
+            var primaryKey = GetConnectionPreferenceKey();
+            if (string.IsNullOrWhiteSpace(primaryKey))
             {
                 return;
             }
 
             var settings = PluginUserSettings.Load();
-            var preference = settings.GetOrCreateConnectionPreference(key);
+            var preference = settings.GetOrCreateConnectionPreference(primaryKey);
             apply(preference);
             settings.Save();
         }
@@ -826,7 +864,107 @@ namespace NameBuilderConfigurator
                 return lastConnectionDetail.ConnectionName;
             }
 
+            // Fall back to stable environment identifiers so preferences persist across reconnects
+            var candidates = new[]
+            {
+                lastConnectionDetail.WebApplicationUrl,
+                lastConnectionDetail.OrganizationFriendlyName,
+                lastConnectionDetail.OrganizationServiceUrl
+            };
+
+            foreach (var candidate in candidates)
+            {
+                if (!string.IsNullOrWhiteSpace(candidate))
+                {
+                    return candidate;
+                }
+            }
+
             return lastConnectionDetail.GetHashCode().ToString(CultureInfo.InvariantCulture);
+        }
+
+        private IEnumerable<string> GetPreferenceKeyCandidates()
+        {
+            if (lastConnectionDetail == null)
+            {
+                yield break;
+            }
+
+            var primary = GetConnectionPreferenceKey();
+            if (!string.IsNullOrWhiteSpace(primary))
+            {
+                yield return primary;
+            }
+
+            // Additional fallbacks for environments saved under different identifiers
+            if (!string.IsNullOrWhiteSpace(lastConnectionDetail.ConnectionName))
+            {
+                yield return lastConnectionDetail.ConnectionName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(lastConnectionDetail.WebApplicationUrl))
+            {
+                yield return lastConnectionDetail.WebApplicationUrl;
+            }
+
+            if (!string.IsNullOrWhiteSpace(lastConnectionDetail.OrganizationFriendlyName))
+            {
+                yield return lastConnectionDetail.OrganizationFriendlyName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(lastConnectionDetail.OrganizationServiceUrl))
+            {
+                yield return lastConnectionDetail.OrganizationServiceUrl;
+            }
+
+            // Legacy hash key
+            yield return lastConnectionDetail.GetHashCode().ToString(CultureInfo.InvariantCulture);
+        }
+
+        private void MigrateLegacyPreferenceKey()
+        {
+            if (lastConnectionDetail == null)
+            {
+                return;
+            }
+
+            var newKey = GetConnectionPreferenceKey();
+            if (string.IsNullOrWhiteSpace(newKey))
+            {
+                return;
+            }
+
+            // Legacy hash-based key
+            var oldKey = lastConnectionDetail.GetHashCode().ToString(CultureInfo.InvariantCulture);
+
+            var settings = PluginUserSettings.Load();
+            var oldPref = settings.GetConnectionPreference(oldKey);
+            if (oldPref == null || string.Equals(oldKey, newKey, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var newPref = settings.GetOrCreateConnectionPreference(newKey);
+            // Only overwrite when the new key is empty to avoid clobbering real data
+            if (newPref.LastSolutionId == null &&
+                string.IsNullOrWhiteSpace(newPref.LastSolutionUniqueName) &&
+                string.IsNullOrWhiteSpace(newPref.LastEntityLogicalName) &&
+                newPref.LastViewId == null &&
+                newPref.PluginSolutionId == null &&
+                string.IsNullOrWhiteSpace(newPref.PluginSolutionUniqueName))
+            {
+                newPref.LastSolutionId = oldPref.LastSolutionId;
+                newPref.LastSolutionUniqueName = oldPref.LastSolutionUniqueName;
+                newPref.LastEntityLogicalName = oldPref.LastEntityLogicalName;
+                newPref.LastViewId = oldPref.LastViewId;
+                newPref.PluginSolutionId = oldPref.PluginSolutionId;
+                newPref.PluginSolutionUniqueName = oldPref.PluginSolutionUniqueName;
+                settings.ConnectionPreferences[newKey] = newPref;
+            }
+
+            // Remove the old key to avoid stale entries
+            settings.ConnectionPreferences.Remove(oldKey);
+            settings.Save();
         }
 
         private void InitializeComponent()
@@ -865,7 +1003,7 @@ namespace NameBuilderConfigurator
             
             retrieveConfigToolButton = new ToolStripButton
             {
-                Text = "Retrieve Config",
+                Text = "Retrieve Configured Entity",
                 DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
                 Image = LoadToolbarIcon("RetrieveConfiguration.png", SystemIcons.Information)
             };
@@ -1438,6 +1576,7 @@ namespace NameBuilderConfigurator
 
                         UpdatePluginInstallButtonState();
                         SetActiveRegistryStep(activeRegistryStep);
+                        TryAutoLoadPublishedConfiguration();
                     }
                 }
             });
@@ -2013,6 +2152,8 @@ namespace NameBuilderConfigurator
                                     statusLabel.Text = "Configuration published.";
                                 }
                                 statusLabel.ForeColor = Color.ForestGreen;
+
+                                CaptureCommittedSnapshot();
                             }
                         }
                     });
@@ -2295,11 +2436,24 @@ namespace NameBuilderConfigurator
 
         private void TryLoadConfigurationFromStep(PluginStepInfo step)
         {
+            TryLoadConfigurationFromStep(step, showAlerts: true);
+        }
+
+        private bool TryLoadConfigurationFromStep(PluginStepInfo step, bool showAlerts)
+        {
+            if (step == null)
+            {
+                return false;
+            }
+
             if (string.IsNullOrWhiteSpace(step.UnsecureConfiguration))
             {
-                MessageBox.Show("The selected step does not contain an unsecure configuration.", "No Configuration",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
+                if (showAlerts)
+                {
+                    MessageBox.Show("The selected step does not contain an unsecure configuration.", "No Configuration",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                return false;
             }
 
             PluginConfiguration config;
@@ -2310,19 +2464,25 @@ namespace NameBuilderConfigurator
             catch (Exception ex)
             {
                 DiagnosticLog.LogError("Load Configuration from Step", ex);
-                MessageBox.Show(
-                    $"Unable to parse the step configuration.\n\n{ex.Message}\n\n" +
-                    "This may indicate a corrupt or incompatible configuration file. Check the diagnostics log for details.",
-                    "Invalid Configuration", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+                if (showAlerts)
+                {
+                    MessageBox.Show(
+                        $"Unable to parse the step configuration.\n\n{ex.Message}\n\n" +
+                        "This may indicate a corrupt or incompatible configuration file. Check the diagnostics log for details.",
+                        "Invalid Configuration", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                return false;
             }
 
             if (config == null)
             {
                 DiagnosticLog.LogWarning("Load Configuration from Step", "Configuration deserialized to null");
-                MessageBox.Show("The selected step did not return a valid configuration payload.", "Invalid Configuration",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+                if (showAlerts)
+                {
+                    MessageBox.Show("The selected step did not return a valid configuration payload.", "Invalid Configuration",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                return false;
             }
 
             if (string.IsNullOrWhiteSpace(config.Entity))
@@ -2338,6 +2498,7 @@ namespace NameBuilderConfigurator
             }
 
             BeginApplyingConfiguration(config, step);
+            return true;
         }
 
         private void BeginApplyingConfiguration(PluginConfiguration config, PluginStepInfo sourceStep)
@@ -2471,6 +2632,184 @@ namespace NameBuilderConfigurator
             ClearPendingConfigurationState();
         }
 
+        private void TryAutoLoadPublishedConfiguration()
+        {
+            var targetEntity = pendingAutoLoadEntity;
+            if (string.IsNullOrWhiteSpace(targetEntity) || autoLoadInProgress)
+            {
+                return;
+            }
+
+            if (Service == null || !pluginPresenceVerified)
+            {
+                return;
+            }
+
+            if (!string.Equals(currentEntityLogicalName, targetEntity, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (autoLoadAttemptedEntities.Contains(targetEntity))
+            {
+                return;
+            }
+
+            if (!EnsureActivePluginTypeLoaded() || activePluginType == null)
+            {
+                return;
+            }
+
+            var pluginTypeId = activePluginType.PluginTypeId;
+            if (pluginTypeId == Guid.Empty)
+            {
+                autoLoadInProgress = false;
+                return;
+            }
+
+            autoLoadAttemptedEntities.Add(targetEntity);
+            autoLoadInProgress = true;
+
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = "Loading existing NameBuilder configuration...",
+                AsyncArgument = new { Entity = targetEntity, PluginTypeId = pluginTypeId },
+                Work = (worker, args) =>
+                {
+                    dynamic arg = args.Argument;
+                    var entityLogicalName = (string)arg.Entity;
+                    var typeId = (Guid)arg.PluginTypeId;
+
+                    PluginStepInfo resolvedStep = null;
+                    Exception capturedError = null;
+
+                    try
+                    {
+                        var updateMessageId = GetSdkMessageId("Update");
+                        resolvedStep = FindExistingStep(typeId, updateMessageId, entityLogicalName, "Update");
+
+                        if (resolvedStep == null)
+                        {
+                            var createMessageId = GetSdkMessageId("Create");
+                            resolvedStep = FindExistingStep(typeId, createMessageId, entityLogicalName, "Create");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        capturedError = ex;
+                    }
+
+                    args.Result = new AutoLoadResult
+                    {
+                        EntityLogicalName = entityLogicalName,
+                        Step = resolvedStep,
+                        Error = capturedError
+                    };
+                },
+                PostWorkCallBack = (args) =>
+                {
+                    autoLoadInProgress = false;
+
+                    if (args.Error != null)
+                    {
+                        DiagnosticLog.LogWarning("Auto Load Configuration", args.Error.Message);
+                        return;
+                    }
+
+                    if (args.Result is AutoLoadResult result)
+                    {
+                        if (!string.Equals(result.EntityLogicalName, currentEntityLogicalName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return;
+                        }
+
+                        if (result.Error != null)
+                        {
+                            DiagnosticLog.LogWarning("Auto Load Configuration", $"Unable to auto-load configuration for {result.EntityLogicalName}: {result.Error.Message}");
+                            return;
+                        }
+
+                        if (result.Step != null)
+                        {
+                            TryLoadConfigurationFromStep(result.Step, showAlerts: false);
+                        }
+                        else
+                        {
+                            statusLabel.Text = $"No published NameBuilder configuration found for {result.EntityLogicalName}.";
+                            statusLabel.ForeColor = Color.DimGray;
+                        }
+                    }
+                }
+            });
+        }
+
+        private bool EnsureEntityChangeAllowed(EntityItem target)
+        {
+            if (target == null || string.IsNullOrWhiteSpace(currentEntityLogicalName))
+            {
+                return true;
+            }
+
+            if (string.Equals(target.LogicalName, currentEntityLogicalName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (!HasUnsavedChanges())
+            {
+                return true;
+            }
+
+            var entityName = currentEntityDisplayName ?? currentEntityLogicalName;
+            var response = MessageBox.Show(this,
+                $"You have unpublished NameBuilder changes for {entityName}.\n\nSwitch entities without publishing?",
+                "Unpublished Changes",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+
+            return response == DialogResult.Yes;
+        }
+
+        private bool HasUnsavedChanges()
+        {
+            if (string.IsNullOrWhiteSpace(currentEntityLogicalName))
+            {
+                return false;
+            }
+
+            var snapshot = GetCurrentJsonSnapshot();
+
+            if (string.IsNullOrWhiteSpace(committedEntityLogicalName))
+            {
+                return !string.IsNullOrWhiteSpace(snapshot);
+            }
+
+            if (!string.Equals(committedEntityLogicalName, currentEntityLogicalName, StringComparison.OrdinalIgnoreCase))
+            {
+                return !string.IsNullOrWhiteSpace(snapshot);
+            }
+
+            return !string.Equals(snapshot ?? string.Empty, committedConfigJson ?? string.Empty, StringComparison.Ordinal);
+        }
+
+        private string GetCurrentJsonSnapshot()
+        {
+            GenerateJson();
+            return jsonOutputTextBox.Text ?? string.Empty;
+        }
+
+        private void CaptureCommittedSnapshot()
+        {
+            if (string.IsNullOrWhiteSpace(currentEntityLogicalName))
+            {
+                return;
+            }
+
+            committedConfigJson = GetCurrentJsonSnapshot();
+            committedEntityLogicalName = currentEntityLogicalName;
+        }
+
         private void ApplyConfigurationToUi(PluginConfiguration config, PluginStepInfo sourceStep)
         {
             suppressBlockSelection = true;
@@ -2524,6 +2863,7 @@ namespace NameBuilderConfigurator
             statusLabel.ForeColor = Color.MediumBlue;
 
             SetActiveRegistryStep(sourceStep);
+            CaptureCommittedSnapshot();
         }
 
         private void ClearPendingConfigurationState()
@@ -2709,6 +3049,8 @@ namespace NameBuilderConfigurator
                     statusLabel.ForeColor = Color.Green;
 
                     ApplySolutionFilterIfReady();
+
+                        CaptureCommittedSnapshot();
                 }
             });
         }
@@ -2720,7 +3062,26 @@ namespace NameBuilderConfigurator
                 return;
             }
 
+            var target = entityDropdown?.SelectedItem as EntityItem;
+            var previous = lastSelectedEntityItem;
+
+            if (!EnsureEntityChangeAllowed(target))
+            {
+                suppressEntitySelectionChanged = true;
+                if (previous != null && entityDropdown.Items.Contains(previous))
+                {
+                    entityDropdown.SelectedItem = previous;
+                }
+                else
+                {
+                    entityDropdown.SelectedIndex = -1;
+                }
+                suppressEntitySelectionChanged = false;
+                return;
+            }
+
             HandleEntitySelectionChanged();
+            lastSelectedEntityItem = target;
         }
 
         private void HandleEntitySelectionChanged()
@@ -2733,6 +3094,9 @@ namespace NameBuilderConfigurator
             var selectedEntity = (EntityItem)entityDropdown.SelectedItem;
             currentEntityLogicalName = selectedEntity.LogicalName;
             currentEntityDisplayName = selectedEntity.DisplayName;
+            pendingAutoLoadEntity = currentEntityLogicalName;
+            committedConfigJson = null;
+            committedEntityLogicalName = null;
 
             ClearSampleRecordCache();
 
@@ -2750,6 +3114,8 @@ namespace NameBuilderConfigurator
             CreateEntityHeaderBlock(selectedEntity.DisplayName, selectedEntity.LogicalName);
 
             ExecuteMethod(() => LoadViewsAndAttributes(selectedEntity.LogicalName));
+            TryAutoLoadPublishedConfiguration();
+            lastSelectedEntityItem = selectedEntity;
         }
         
         private void CreateEntityHeaderBlock(string displayName, string logicalName)
@@ -3000,6 +3366,11 @@ namespace NameBuilderConfigurator
                     statusLabel.Text = $"Loaded {currentAttributes.Count} attributes, {personalCount + systemCount} views";
 
                     TryApplyPendingConfiguration();
+
+                    if (pendingConfigFromPlugin == null)
+                    {
+                        CaptureCommittedSnapshot();
+                    }
                 }
             });
         }
@@ -6481,6 +6852,13 @@ namespace NameBuilderConfigurator
         {
             public List<string> UpdatedSteps { get; } = new List<string>();
             public List<PluginStepInfo> StepMetadata { get; } = new List<PluginStepInfo>();
+        }
+
+        private class AutoLoadResult
+        {
+            public string EntityLogicalName { get; set; }
+            public PluginStepInfo Step { get; set; }
+            public Exception Error { get; set; }
         }
 
         private class EntityItem

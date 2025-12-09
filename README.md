@@ -1,7 +1,7 @@
 # NameBuilder Configurator – XrmToolBox Plugin
 
 > Visual designer for the [NameBuilder](https://github.com/mscottsewell/Dataverse-NameBuilder) Dataverse plug-in. Connect through XrmToolBox, assemble name patterns, preview the output, and publish JSON back to Create/Update steps without writing code.
-<img width="1465" height="934" alt="image" src="https://github.com/user-attachments/assets/f1b46662-96e3-4801-aa33-9be79181a4e5" />
+![Screenshot of NameBuilder Configurator UI](https://github.com/user-attachments/assets/f1b46662-96e3-4801-aa33-9be79181a4e5)
 
 ## Table of Contents
 
@@ -111,7 +111,7 @@ Every ribbon button, dropdown, and property control now exposes a tooltip—hove
 
 | Area | Description |
 | --- | --- |
-| **Ribbon** | Load entities, retrieve configs, import/export/copy JSON, update the NameBuilder assembly, and publish. Tooltips summarize each command. |
+| **Ribbon** | Load entities, retrieve configured entities, import/export/copy JSON, update the NameBuilder assembly, and publish. Tooltips summarize each command. |
 | **Solution dropdown** | Filter entities by Dataverse solution (optional). Display names shown; solution IDs stored for lookups. |
 | **Entity explorer** | Entity picker, optional view selector (personal views first, separator, then system views), sample record dropdown, and the Available Attributes list (double-click to add). |
 | **Field blocks** | Ordered list with drag handles (▲/▼ buttons), delete icons, and inline summary showing attribute name, type, and key properties. |
@@ -142,9 +142,9 @@ Every ribbon button, dropdown, and property control now exposes a tooltip—hove
 
 ### Retrieve from Dataverse
 
-1. Click **Retrieve Configuration**.
+1. Click **Retrieve Configured Entity**.
 2. Choose a NameBuilder plug-in type and step.
-3. The unsecure configuration is parsed and loaded for editing.
+3. The unsecure configuration is parsed and loaded for editing (the ribbon button is redundant if an entity already auto-loaded; see note above).
 4. Make edits and publish/export as needed.
 
 ### Publish back to Dataverse
@@ -174,7 +174,7 @@ Need deeper schema detail? See [docs/USAGE.md](docs/USAGE.md) or the upstream Do
 ## Settings & Persistence
 
 - `%APPDATA%\NameBuilderConfigurator\settings.json` stores splitter positions, preview height, default prefixes/suffixes/formats/timezones, and other UI preferences.
-- **Per-connection preferences**: Each connection remembers its selected plugin solution (ID and unique name) to streamline repeated deployments and maintain consistency.
+- **Per-connection preferences**: Each connection remembers its selected plugin solution (ID and unique name) using a stable key (connection name + org URL). Legacy keys are migrated and cleaned up automatically. Preferences restore when you reconnect or switch connections without you reselecting the solution.
 - Defaults propagate automatically to new blocks and can retroactively update existing ones that matched the prior default.
 - The plug-in caches local vs. Dataverse NameBuilder assembly hashes so you can see whether the server version matches your local DLL before publishing.
 
